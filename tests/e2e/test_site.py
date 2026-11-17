@@ -94,6 +94,9 @@ with sync_playwright() as playwright:
     expect(page.get_by_role('heading', name='Validation and Coverage')).to_be_visible(timeout=30000)
     totals = [int(text.replace(',', '')) for text in page.locator('#rule-errors .list-rows > li > span:first-child').all_inner_texts()]
     print('rule error groups:', totals)
+    page.locator('a[data-jump="rule-errors"]').first.click()
+    page.wait_for_timeout(800)
+    check('#/' in page.url and page.locator('#rule-errors').is_visible(), 'the rule error count jumps to the Rule Errors section and stays on the page')
     check(sum(totals) == 136, 'grouped rule errors add up to 136')
     check(page.locator('#compatibility li').count() == 10, 'compatibility lists the 10 broken samples')
     body = page.inner_text('main')

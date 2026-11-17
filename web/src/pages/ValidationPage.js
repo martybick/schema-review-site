@@ -73,14 +73,14 @@ export class ValidationPage {
       const valid = group.samples.filter((sample) => sample.isValid).length;
       const ruleErrors = group.samples.reduce((total, sample) => total + sample.ruleErrors, 0);
       const broken = group.samples.filter((sample) => sample.isBroken).length;
-      const note = broken > 0 ? `<a href="#compatibility">${formatNumber(broken)} valid under ${escapeHTML(compatibility.against)}</a>` : '';
+      const note = broken > 0 ? `<a href="#compatibility" data-jump="compatibility">${formatNumber(broken)} valid under ${escapeHTML(compatibility.against)}</a>` : '';
       return `
         <tr>
           <th scope="row">${escapeHTML(group.label)}</th>
           <td>${escapeHTML(describeRole(group.role))}</td>
           <td class="num">${formatNumber(group.samples.length)}</td>
           <td class="num">${formatNumber(valid)}</td>
-          <td class="num">${ruleErrors > 0 ? `<a href="#rule-errors">${formatNumber(ruleErrors)}</a>` : '0'}</td>
+          <td class="num">${ruleErrors > 0 ? `<a href="#rule-errors" data-jump="rule-errors">${formatNumber(ruleErrors)}</a>` : '0'}</td>
           <td>${note}</td>
         </tr>`;
     }).join('');
@@ -240,6 +240,15 @@ export class ValidationPage {
           ${this.#renderRunNotes(report)}
         </aside>
       </div>`;
+    // NOTE: the site's pages live in the address's # part, so a plain
+    // "#rule-errors" link would be read as a page name. These links scroll
+    // to their section instead.
+    for (const link of container.querySelectorAll('a[data-jump]')) {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        container.querySelector(`#${CSS.escape(link.dataset.jump)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
   }
 }
 
