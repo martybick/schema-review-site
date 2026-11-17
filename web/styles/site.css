@@ -64,6 +64,14 @@ p { margin: 0; }
 .site-header__user button { font: inherit; font-weight: 600; color: #ffffff; background: transparent; border: 1px solid var(--blue-200); border-radius: var(--radius-md); padding: 6px 12px; cursor: pointer; }
 
 /* ------------------------------------------------------------------------ */
+/* Welcome notice                                                            */
+/* ------------------------------------------------------------------------ */
+
+.site-notice { background: var(--surface-200); border-bottom: 1px solid var(--surface-300); }
+.site-notice__inner { max-width: 1344px; margin: 0 auto; padding: 16px 48px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 14px; line-height: 22px; }
+.site-notice__inner p { flex: 1 1 560px; }
+
+/* ------------------------------------------------------------------------ */
 /* Layout                                                                    */
 /* ------------------------------------------------------------------------ */
 
@@ -132,7 +140,7 @@ input, select, textarea { font: inherit; font-size: 14px; font-weight: 400; padd
 /* ------------------------------------------------------------------------ */
 
 @media (max-width: 700px) {
-  .site-header__bar, .page { padding-left: 20px; padding-right: 20px; }
+  .site-header__bar, .page, .site-notice__inner { padding-left: 20px; padding-right: 20px; }
   .site-header__bar { gap: 12px; }
   .figure__value { font-size: 36px; line-height: 44px; }
 }

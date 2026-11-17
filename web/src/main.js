@@ -80,7 +80,36 @@ class SiteApp {
     userArea.innerHTML = user
       ? `<span>${escapeHTML(user.email)}${this.authController.isAdmin ? ' · Admin' : ''}</span><button type="button" id="sign-out">Sign out</button>`
       : '';
-    userArea.querySelector('#sign-out')?.addEventListener('click', () => this.authController.signOutUser());
+    userArea.querySelector('#sign-out')?.addEventListener('click', () => this.#confirmSignOut());
+  }
+
+  #confirmSignOut () {
+    const message = 'Sign out of this browser?\n\nYou stay signed in if you just close the window. After signing out, you will need a new sign-in link by email to come back.';
+    if (window.confirm(message)) {
+      this.authController.signOutUser();
+    }
+  }
+
+  // NOTE: shown once on each browser after the first sign-in there, so people
+  // know they can simply come back without a new email link.
+  #renderWelcome () {
+    const notice = document.getElementById('site-notice');
+    if (!this.authController.isMember || !this.authController.isWelcomePending()) {
+      notice.hidden = true;
+      notice.innerHTML = '';
+      return;
+    }
+    notice.hidden = false;
+    notice.innerHTML = `
+      <div class="site-notice__inner" role="status">
+        <p><strong>You are signed in on this browser, and you will stay signed in.</strong> To come back, just open <a href="${escapeHTML(window.location.origin)}/">${escapeHTML(window.location.host)}</a>. Bookmark it, or add it to your Dock (Safari: File, then Add to Dock; Chrome: the ⋮ menu, then Cast, save and share, then Install page as app). You only need a new email link on another browser or computer, or after you sign out.</p>
+        <button class="button button--secondary" type="button" id="dismiss-welcome">Got it</button>
+      </div>`;
+    notice.querySelector('#dismiss-welcome').addEventListener('click', () => {
+      this.authController.dismissWelcome();
+      notice.hidden = true;
+      notice.innerHTML = '';
+    });
   }
 
   async #findPackageEntry (
@@ -135,6 +164,7 @@ class SiteApp {
     if (!this.authController.isReady) {
       return;
     }
+    this.#renderWelcome();
     try {
       if (this.authController.user === null || this.authController.isSignInLink()) {
         await new SignInPage(this.authController).render(this.container);

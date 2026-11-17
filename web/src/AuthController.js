@@ -32,6 +32,9 @@ export class AuthController {
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   static PENDING_EMAIL_KEY = 'schemaReview.pendingEmail';
+  static LAST_EMAIL_KEY = 'schemaReview.lastEmail';
+  static RETURN_TO_KEY = 'schemaReview.returnTo';
+  static WELCOME_KEY = 'schemaReview.welcome';
   static ROLE_ADMIN = 'admin';
   static ROLE_USER = 'user';
   static ROLE_NONE = 'none';
@@ -126,6 +129,8 @@ export class AuthController {
     this.#listeners.add(listener);
   }
 
+  // NOTE: remembers the page the person was trying to reach, so sign-in
+  // takes them back to it (a shared link to a construct, for example).
   async sendSignInLink (
     email
   ) {
@@ -134,10 +139,13 @@ export class AuthController {
       handleCodeInApp: true
     };
     await sendSignInLinkToEmail(services.auth, email, actionCodeSettings);
-    try {
-      window.localStorage.setItem(AuthController.PENDING_EMAIL_KEY, email);
-    } catch (error) {
-      // NOTE: without storage the person types their email again on return.
+    writeSetting(AuthController.PENDING_EMAIL_KEY, email);
+    writeSetting(AuthController.LAST_EMAIL_KEY, email);
+    const returnTo = window.location.hash;
+    if (returnTo && returnTo !== '#/' && !returnTo.startsWith('#/import')) {
+      writeSetting(AuthController.RETURN_TO_KEY, returnTo);
+    } else {
+      removeSetting(AuthController.RETURN_TO_KEY);
     }
   }
 
@@ -146,27 +154,74 @@ export class AuthController {
   }
 
   getPendingEmail () {
-    try {
-      return window.localStorage.getItem(AuthController.PENDING_EMAIL_KEY);
-    } catch (error) {
-      return null;
-    }
+    return readSetting(AuthController.PENDING_EMAIL_KEY);
+  }
+
+  getLastEmail () {
+    return readSetting(AuthController.LAST_EMAIL_KEY);
+  }
+
+  isWelcomePending () {
+    return readSetting(AuthController.WELCOME_KEY) === 'pending';
+  }
+
+  dismissWelcome () {
+    writeSetting(AuthController.WELCOME_KEY, 'dismissed');
   }
 
   async finishSignIn (
     email
   ) {
     await signInWithEmailLink(services.auth, email, window.location.href);
-    try {
-      window.localStorage.removeItem(AuthController.PENDING_EMAIL_KEY);
-    } catch (error) {
-      // NOTE: nothing to clean up.
+    removeSetting(AuthController.PENDING_EMAIL_KEY);
+    writeSetting(AuthController.LAST_EMAIL_KEY, email);
+    if (readSetting(AuthController.WELCOME_KEY) !== 'dismissed') {
+      writeSetting(AuthController.WELCOME_KEY, 'pending');
     }
-    window.history.replaceState(null, '', `${window.location.pathname}#/`);
+    const returnTo = readSetting(AuthController.RETURN_TO_KEY) ?? '#/';
+    removeSetting(AuthController.RETURN_TO_KEY);
+    window.history.replaceState(null, '', `${window.location.pathname}${returnTo}`);
   }
 
   async signOutUser () {
     await signOut(services.auth);
     window.location.hash = '#/';
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Functions
+// ----------------------------------------------------------------------------
+
+// NOTE: browser storage can be unavailable (private windows, strict
+// settings); the site then works the same, only without the conveniences.
+function readSetting (
+  key
+) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeSetting (
+  key,
+  value
+) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (error) {
+    // NOTE: see readSetting.
+  }
+}
+
+function removeSetting (
+  key
+) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    // NOTE: see readSetting.
   }
 }

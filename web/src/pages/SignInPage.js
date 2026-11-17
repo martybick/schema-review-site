@@ -44,9 +44,10 @@ export class SignInPage {
       </section>
       <form class="form" id="sign-in-form" novalidate>
         <label>Email address
-          <input type="email" name="email" autocomplete="email" required>
+          <input type="email" name="email" autocomplete="email" required value="${escapeHTML(this.authController.getLastEmail() ?? '')}">
         </label>
         <div><button class="button" type="submit">Email me a sign-in link</button></div>
+        <p class="small muted">Once you are signed in, this browser keeps you signed in until you choose Sign out.</p>
         <div id="sign-in-status">${notice}</div>
       </form>`;
     const form = container.querySelector('#sign-in-form');
@@ -84,7 +85,7 @@ export class SignInPage {
       </section>
       <form class="form" id="finish-form" novalidate>
         <label>Email address
-          <input type="email" name="email" autocomplete="email" required>
+          <input type="email" name="email" autocomplete="email" required value="${escapeHTML(this.authController.getLastEmail() ?? '')}">
         </label>
         <div><button class="button" type="submit">Sign in</button></div>
         <div id="finish-status"></div>

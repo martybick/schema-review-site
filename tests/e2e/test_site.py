@@ -28,8 +28,8 @@ def check(condition, label):
         failures.append(label)
 
 
-def sign_in(page, email):
-    page.goto(SITE + '/')
+def sign_in(page, email, start='/'):
+    page.goto(SITE + start)
     page.get_by_label('Email address').fill(email)
     page.get_by_role('button', name='Email me a sign-in link').click()
     expect(page.get_by_text('A sign-in link is on its way')).to_be_visible(timeout=15000)
@@ -117,15 +117,33 @@ with sync_playwright() as playwright:
     check(True, 'citableAsShortTitle shows as changed since 2.1.0')
     context.close()
 
-    # Invited user: no import.
+    # Invited user: a shared link survives sign-in; no import; staying signed in.
     context = browser.new_context(viewport={'width': 1440, 'height': 1000})
     page = context.new_page()
-    sign_in(page, 'member@test.example')
+    sign_in(page, 'member@test.example', '/#/releases/uslm-2.2.0-rc1/constructs/element/rollCall')
+    expect(page.get_by_role('heading', name='<rollCall>')).to_be_visible(timeout=30000)
+    check(True, 'a shared link opened while signed out leads to that page after sign-in')
+    expect(page.get_by_text('You are signed in on this browser, and you will stay signed in.')).to_be_visible()
+    check(True, 'the welcome note appears after the first sign-in')
+    page.get_by_role('button', name='Got it').click()
+    page.reload()
+    expect(page.get_by_role('heading', name='<rollCall>')).to_be_visible(timeout=30000)
+    check(not page.get_by_text('you will stay signed in.').is_visible(), 'the welcome note stays dismissed after a reload')
+    check(page.get_by_text('member@test.example').is_visible(), 'still signed in after a reload')
+    page.goto(SITE + '/#/')
     expect(page.get_by_role('heading', name='USLM 2.2.0-rc1')).to_be_visible(timeout=30000)
     check(not page.locator('#nav-import').is_visible(), 'user does not see Import package')
     page.goto(SITE + '/#/import')
     expect(page.get_by_text('Only admins can import release packages.')).to_be_visible()
     check(True, 'user is refused the import page')
+    page.once('dialog', lambda dialog: dialog.dismiss())
+    page.get_by_role('button', name='Sign out').click()
+    page.wait_for_timeout(1000)
+    check(page.get_by_text('member@test.example').is_visible(), 'cancelling the sign-out question keeps the person signed in')
+    page.once('dialog', lambda dialog: dialog.accept())
+    page.get_by_role('button', name='Sign out').click()
+    expect(page.get_by_role('heading', name='Sign In to USLM 2 Review')).to_be_visible(timeout=15000)
+    check(page.get_by_label('Email address').input_value() == 'member@test.example', 'the sign-in form remembers the email address')
     context.close()
 
     # Uninvited address.
