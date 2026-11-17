@@ -146,6 +146,47 @@ with sync_playwright() as playwright:
     check(page.get_by_label('Email address').input_value() == 'member@test.example', 'the sign-in form remembers the email address')
     context.close()
 
+    # Link opened in a different browser: confirm the email, double-click
+    # Sign in, then reuse the same link in a third browser.
+    asker = browser.new_context().new_page()
+    asker.goto(SITE + '/')
+    asker.get_by_label('Email address').fill('member@test.example')
+    asker.get_by_role('button', name='Email me a sign-in link').click()
+    expect(asker.get_by_text('A sign-in link is on its way')).to_be_visible(timeout=15000)
+    codes = json.load(urllib.request.urlopen(OOB))['oobCodes']
+    code = [c for c in codes if c['email'] == 'member@test.example' and c['requestType'] == 'EMAIL_SIGNIN'][-1]
+    link = f"{SITE}/?mode=signIn&oobCode={code['oobCode']}&apiKey=fake-api-key&lang=en"
+    other = browser.new_context().new_page()
+    other.goto(link)
+    expect(other.get_by_role('heading', name='Finish Signing In')).to_be_visible(timeout=15000)
+    other.get_by_label('Email address').fill('member@test.example')
+    other.get_by_role('button', name='Sign in').dblclick()
+    expect(other.get_by_role('heading', name='USLM 2.2.0-rc1')).to_be_visible(timeout=30000)
+    check(True, 'a link opened in another browser signs in, even with a double click')
+    third = browser.new_context().new_page()
+    third.goto(link)
+    expect(third.get_by_role('heading', name='Finish Signing In')).to_be_visible(timeout=15000)
+    third.get_by_label('Email address').fill('member@test.example')
+    third.get_by_role('button', name='Sign in').click()
+    expect(third.get_by_text('That sign-in link can no longer be used')).to_be_visible(timeout=15000)
+    check(third.get_by_role('button', name='Email me a sign-in link').is_visible(), 'a used link explains itself and offers a new one')
+    for page_to_close in (asker, other, third):
+        page_to_close.context.close()
+
+    # Sign in with Google (the Auth emulator's stand-in Google account).
+    google_page = browser.new_context().new_page()
+    google_page.goto(SITE + '/#/validation')
+    expect(google_page.get_by_role('button', name='Sign in with Google')).to_be_visible(timeout=20000)
+    with google_page.expect_popup() as popup_info:
+        google_page.get_by_role('button', name='Sign in with Google').click()
+    popup = popup_info.value
+    popup.get_by_role('button', name='Add new account').click()
+    popup.locator('#email-input').fill('member@test.example')
+    popup.get_by_role('button', name='Sign in with Google.com').click()
+    expect(google_page.get_by_role('heading', name='Validation and Coverage')).to_be_visible(timeout=30000)
+    check(True, 'Sign in with Google works for an invited address and keeps the page')
+    google_page.context.close()
+
     # Uninvited address.
     context = browser.new_context(viewport={'width': 390, 'height': 844})
     page = context.new_page()

@@ -8,10 +8,13 @@
 // ----------------------------------------------------------------------------
 
 import {
+  GoogleAuthProvider,
   isSignInWithEmailLink,
   onAuthStateChanged,
   sendSignInLinkToEmail,
   signInWithEmailLink,
+  signInWithPopup,
+  signInWithRedirect,
   signOut
 } from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-auth.js';
 import { getMetadata, ref } from 'https://www.gstatic.com/firebasejs/13.4.0/firebase-storage.js';
@@ -21,8 +24,10 @@ import { services } from './firebase.js';
 // AuthController
 // ----------------------------------------------------------------------------
 
-// NOTE: sign-in is by email link only; there are no passwords. Anyone can ask
-// for a link, but only invited people can read anything (storage.rules). The
+// NOTE: two ways to sign in, neither with a password on this site: "Sign in
+// with Google" for anyone whose invited address is a Google account (Google
+// Workspace included), and an emailed sign-in link for everyone else. Anyone
+// can sign in, but only invited addresses can read anything (storage.rules). The
 // person's role comes from the rules too: config/admin-check and
 // config/member-check never exist, so a read that is allowed fails with
 // "object-not-found" and a read that is refused fails with "unauthorized".
@@ -53,6 +58,11 @@ export class AuthController {
     this.user = null;
     this.role = AuthController.ROLE_NONE;
     this.isReady = false;
+    // NOTE: the sign-in link is captured as the page opens, because the
+    // address can change before the person finishes signing in.
+    this.signInLink = isSignInWithEmailLink(services.auth, window.location.href)
+      ? window.location.href
+      : null;
   }
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -149,8 +159,41 @@ export class AuthController {
     }
   }
 
+  // NOTE: a popup keeps the person on the page; if the browser blocks it,
+  // the same sign-in runs as a full-page redirect instead.
+  async signInWithGoogle () {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const returnTo = window.location.hash;
+    try {
+      const result = await signInWithPopup(services.auth, provider);
+      if (result.user?.email) {
+        writeSetting(AuthController.LAST_EMAIL_KEY, result.user.email);
+      }
+      if (readSetting(AuthController.WELCOME_KEY) !== 'dismissed') {
+        writeSetting(AuthController.WELCOME_KEY, 'pending');
+      }
+    } catch (error) {
+      if (error.code === 'auth/popup-blocked') {
+        if (returnTo && returnTo !== '#/') {
+          writeSetting(AuthController.RETURN_TO_KEY, returnTo);
+        }
+        await signInWithRedirect(services.auth, provider);
+        return;
+      }
+      throw error;
+    }
+  }
+
   isSignInLink () {
-    return isSignInWithEmailLink(services.auth, window.location.href);
+    return this.signInLink !== null;
+  }
+
+  // NOTE: forgets a sign-in link that cannot be used (expired or already
+  // used), so the page offers a new one instead.
+  discardSignInLink () {
+    this.signInLink = null;
+    window.history.replaceState(null, '', `${window.location.pathname}#/`);
   }
 
   getPendingEmail () {
@@ -172,7 +215,8 @@ export class AuthController {
   async finishSignIn (
     email
   ) {
-    await signInWithEmailLink(services.auth, email, window.location.href);
+    await signInWithEmailLink(services.auth, email, this.signInLink);
+    this.signInLink = null;
     removeSetting(AuthController.PENDING_EMAIL_KEY);
     writeSetting(AuthController.LAST_EMAIL_KEY, email);
     if (readSetting(AuthController.WELCOME_KEY) !== 'dismissed') {

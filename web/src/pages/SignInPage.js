@@ -34,24 +34,50 @@ export class SignInPage {
 
   #renderRequestForm (
     container,
-    notice = ''
+    notice = '',
+    email = null
   ) {
     container.innerHTML = `
       <section class="stack">
         <p class="eyebrow">By invitation</p>
         <h1>Sign In to ${escapeHTML(SITE_CONFIG.siteName)}</h1>
-        <p>Enter the email address your invitation was sent to. We will email you a link that signs you in; there is no password.</p>
+        <p>Use the address your invitation was sent to. There is no password for this site.</p>
+      </section>
+      <section class="form" aria-labelledby="google-heading">
+        <h2 id="google-heading" style="font-size: 18px; line-height: 26px">If your address is a Google account</h2>
+        <div><button class="button" type="button" id="google-sign-in">Sign in with Google</button></div>
+        <div id="google-status"></div>
       </section>
       <form class="form" id="sign-in-form" novalidate>
+        <h2 style="font-size: 18px; line-height: 26px">Otherwise, get a sign-in link by email</h2>
         <label>Email address
-          <input type="email" name="email" autocomplete="email" required value="${escapeHTML(this.authController.getLastEmail() ?? '')}">
+          <input type="email" name="email" autocomplete="email" required value="${escapeHTML(email ?? this.authController.getLastEmail() ?? '')}">
         </label>
-        <div><button class="button" type="submit">Email me a sign-in link</button></div>
+        <div><button class="button button--secondary" type="submit">Email me a sign-in link</button></div>
         <p class="small muted">Once you are signed in, this browser keeps you signed in until you choose Sign out.</p>
         <div id="sign-in-status">${notice}</div>
       </form>`;
     const form = container.querySelector('#sign-in-form');
     form.addEventListener('submit', (event) => this.#onRequestLink(event, form));
+    const googleButton = container.querySelector('#google-sign-in');
+    googleButton.addEventListener('click', () => this.#onGoogleSignIn(googleButton, container.querySelector('#google-status')));
+  }
+
+  async #onGoogleSignIn (
+    button,
+    status
+  ) {
+    button.disabled = true;
+    status.innerHTML = '';
+    try {
+      await this.authController.signInWithGoogle();
+    } catch (error) {
+      const isClosed = ['auth/popup-closed-by-user', 'auth/cancelled-popup-request'].includes(error.code);
+      if (!isClosed) {
+        status.innerHTML = `<div class="message message--error" role="alert">Could not sign in with Google: ${escapeHTML(error.message)}</div>`;
+      }
+      button.disabled = false;
+    }
   }
 
   async #onRequestLink (
@@ -81,7 +107,7 @@ export class SignInPage {
     container.innerHTML = `
       <section class="stack">
         <h1>Finish Signing In</h1>
-        <p>Confirm the email address you asked for the link with.</p>
+        <p>You opened the sign-in link in a different browser from the one you asked for it in. Confirm the email address the link was sent to.</p>
       </section>
       <form class="form" id="finish-form" novalidate>
         <label>Email address
@@ -93,7 +119,13 @@ export class SignInPage {
     const form = container.querySelector('#finish-form');
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      const button = form.querySelector('button');
+      if (button.disabled) {
+        return;
+      }
+      button.disabled = true;
       await this.#finish(container, form.elements.email.value.trim(), form.querySelector('#finish-status'));
+      button.disabled = false;
     });
   }
 
@@ -102,16 +134,29 @@ export class SignInPage {
     email,
     status
   ) {
+    if (status) {
+      status.innerHTML = '<p class="muted" role="status">Signing you in…</p>';
+    }
     try {
       await this.authController.finishSignIn(email);
+      if (status) {
+        status.innerHTML = '<p class="muted" role="status">Signed in. Opening the site…</p>';
+      }
     } catch (error) {
-      const text = error.code === 'auth/invalid-action-code'
-        ? 'This sign-in link has expired or was already used. Ask for a new one.'
+      const isUnusable = ['auth/invalid-action-code', 'auth/expired-action-code', 'auth/argument-error'].includes(error.code);
+      if (isUnusable) {
+        // NOTE: a link works once and expires; offer a new one at once.
+        this.authController.discardSignInLink();
+        this.#renderRequestForm(container, '<div class="message message--error" role="alert">That sign-in link can no longer be used: each link works once and expires after a while. Ask for a new one below, and open it in the browser you ask from.</div>', email);
+        return;
+      }
+      const text = error.code === 'auth/invalid-email'
+        ? 'That is not the address the link was sent to. Check it and try again.'
         : `Could not sign in: ${error.message}`;
       if (status) {
         status.innerHTML = `<div class="message message--error" role="alert">${escapeHTML(text)}</div>`;
       } else {
-        this.#renderRequestForm(container, `<div class="message message--error" role="alert">${escapeHTML(text)}</div>`);
+        this.#renderRequestForm(container, `<div class="message message--error" role="alert">${escapeHTML(text)}</div>`, email);
       }
     }
   }
@@ -156,7 +201,7 @@ export class NotInvitedPage {
       <section class="stack">
         <h1>No Access Yet</h1>
         <p>You are signed in as <strong>${escapeHTML(email)}</strong>, but this address has not been invited to ${escapeHTML(SITE_CONFIG.siteName)}.</p>
-        <p>If you were invited at another address, sign out and sign in with that one. Otherwise, ask Xcential for an invitation.</p>
+        <p>If you were invited at another address, sign out and sign in with that one. If you used "Sign in with Google", note that only the exact invited address works. Otherwise, ask Xcential for an invitation.</p>
         <div><button class="button button--secondary" type="button" id="not-invited-sign-out">Sign out</button></div>
       </section>`;
     container.querySelector('#not-invited-sign-out').addEventListener('click', () => this.authController.signOutUser());

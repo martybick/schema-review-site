@@ -21,14 +21,16 @@
    origin, and `storage.rules` decides who may read. (`cors.json` is kept in case packages are
    ever read straight from the bucket's `storage.googleapis.com` address.)
 
-4. **Check sign-in settings** in the Firebase console, Authentication → Sign-in method →
-   Email/Password: **both** switches on, Email/Password and **Email link (passwordless sign-in)**.
-   Without the second, asking for a link fails with `auth/operation-not-allowed`.
+4. **Check sign-in settings** in the Firebase console, Authentication → Sign-in method:
+   - **Google** enabled, for "Sign in with Google".
+   - **Email/Password** with **both** switches on, Email/Password and **Email link (passwordless
+     sign-in)**. Without the second, asking for a link fails with `auth/operation-not-allowed`.
 
 ## Inviting people
 
 Add the address to `config/members.json` (under `admins` or `users`) and run `npm run deploy`. Tell
-the person to open the site and ask for a sign-in link. Someone not on the list can still ask for a
+the person to open the site and choose **Sign in with Google** if that address is a Google account
+(Google Workspace included), or ask for a sign-in link by email. Someone not on the list can still ask for a
 link, but sees "No Access Yet" and can read nothing.
 
 Removing someone works the same way: delete the address and deploy.

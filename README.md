@@ -11,7 +11,7 @@ decision records.
 
 ## What slice 1 does
 
-- **Sign-in by email link**, for invited people only. Two roles: admin and user.
+- **Sign-in with Google or by email link**, for invited people only. Two roles: admin and user.
 - **Import a release package** (admins): choose the unzipped package folder; every file is checked
   against the manifest's SHA-256 before anything is uploaded.
 - **Release home:** status, sample results, compatibility with the release it builds on, construct
@@ -28,7 +28,7 @@ from branches, bulk corpora, legacy conversion, the monthly log. See the design 
 
 - Plain JavaScript ES modules and classes, no framework and no build step, following Xcential's
   coding conventions (Semistandard; `npm run lint`).
-- Firebase: Hosting serves `web/`; Authentication (email link); Storage holds packages under
+- Firebase: Hosting serves `web/`; Authentication (Google, and email link); Storage holds packages under
   `packages/<project>-<release>/`. The Firebase SDK loads from Google's CDN, pinned to one version.
 - Access is enforced by `storage.rules`, generated from the invitation list (see below).
 
