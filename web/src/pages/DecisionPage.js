@@ -52,14 +52,25 @@ export function renderTally (
   return `<span class="tally"><span class="pill pill--support">${counts.support} support</span><span class="pill pill--oppose">${counts.oppose} oppose</span><span class="pill">${counts.abstain} abstain</span></span>`;
 }
 
-function renderNoDecisions (
+// NOTE: decisions belong to the release whose register lists them; when the
+// release asked for has none, point to the releases that do.
+async function renderNoDecisions (
   container,
+  store,
   packageEntry
 ) {
+  const others = [];
+  for (const entry of await store.listPackages()) {
+    if (entry.name !== packageEntry.name && (await loadDecisions(store, entry)) !== null) {
+      others.push(entry);
+    }
+  }
+  const links = others.map((entry) => `<li><a href="${getDecisionLink(entry.name)}">Decisions in ${escapeHTML(entry.manifest.release)}</a></li>`).join('');
   container.innerHTML = `
     <section class="stack">
       <h1>Decisions</h1>
       <p>Release ${escapeHTML(packageEntry.manifest.release)} has no decision register.</p>
+      ${links ? `<ul style="margin: 0; padding-left: 20px">${links}</ul>` : ''}
       <p><a href="${getReleaseLink(packageEntry.name)}">Back to the release</a></p>
     </section>`;
 }
@@ -95,7 +106,7 @@ export class DecisionListPage {
     container.innerHTML = '<p class="muted" role="status">Loading decisions…</p>';
     const register = await loadDecisions(this.store, this.packageEntry);
     if (register === null) {
-      renderNoDecisions(container, this.packageEntry);
+      await renderNoDecisions(container, this.store, this.packageEntry);
       return;
     }
     const project = this.packageEntry.manifest.project;
@@ -338,7 +349,7 @@ export class DecisionPage {
       container.innerHTML = '<p class="muted" role="status">Loading the decision…</p>';
       const register = await loadDecisions(this.store, this.packageEntry);
       if (register === null) {
-        renderNoDecisions(container, this.packageEntry);
+        await renderNoDecisions(container, this.store, this.packageEntry);
         return;
       }
       this.decision = register.decisions.find((decision) => decision.id === this.decisionID) ?? null;

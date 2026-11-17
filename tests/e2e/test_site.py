@@ -83,6 +83,7 @@ with sync_playwright() as playwright:
     check('10 of 126 samples valid under 2.1.0 are now invalid' in body, 'release home shows the compatibility break')
     check('How to record a floor vote by name' in body and 'Proposed: B, a new element' in body, 'decision D1 listed with its proposed choice')
     check('hdoc and floor-day patterns' in body, 'D5 open part listed')
+    check(page.locator('#other-releases a', has_text='USLM 2.1.0').count() == 1, 'release home links the other imported releases')
     rows = page.locator('#changes tbody tr').all_inner_texts()
     print('changes rows:', rows)
     check(any(row.startswith('Elements\t77\t') for row in rows), 'changes table: 77 new elements, as the packager comparison found')

@@ -113,6 +113,25 @@ export class ReleaseHomePage {
       </section>`;
   }
 
+  // NOTE: every imported release, so people can move between the release
+  // under review and the ones before or after it.
+  async #fillReleases (
+    container
+  ) {
+    const target = container.querySelector('#other-releases');
+    const packages = await this.store.listPackages();
+    if (!target || packages.length < 2) {
+      target?.remove();
+      return;
+    }
+    const items = packages.map((entry) => {
+      const label = `${String(entry.manifest.project).toUpperCase()} ${entry.manifest.release}`;
+      const status = ReleaseHomePage.STATUS_LABELS[entry.manifest.status] ?? entry.manifest.status;
+      return `<li><span>${entry.name === this.packageEntry.name ? `<strong>${escapeHTML(label)}</strong> (this page)` : `<a href="${getReleaseLink(entry.name)}">${escapeHTML(label)}</a>`}</span><span class="muted">${escapeHTML(status)}</span></li>`;
+    }).join('');
+    target.innerHTML = `<h3 id="releases-heading">Releases on This Site</h3><ul class="list-plain">${items}</ul>`;
+  }
+
   #renderPackageFiles () {
     const contents = this.manifest.contents ?? {};
     const guides = (contents.reviewGuide ?? []).map((entry) => `<li><a data-file="${escapeHTML(entry.path)}">${escapeHTML(entry.path.replace('review-guide/', ''))}</a></li>`).join('');
@@ -137,7 +156,7 @@ export class ReleaseHomePage {
     }
     const register = await loadDecisions(this.store, this.packageEntry);
     if (register === null) {
-      target.innerHTML = '<p class="muted">This package has no decision records.</p>';
+      target.innerHTML = '<h2 id="decisions-heading">Decisions</h2><p class="muted">This release has no decision register.</p>';
       return;
     }
     const project = this.manifest.project;
@@ -251,11 +270,13 @@ export class ReleaseHomePage {
           <section class="stack" id="decisions" aria-labelledby="decisions-heading"><p class="muted" role="status">Loading decisions…</p></section>
         </div>
         <aside class="row__side">
+          <section class="stack" id="other-releases" aria-labelledby="releases-heading"></section>
           ${this.#renderSamples()}
           ${this.#renderPackageFiles()}
         </aside>
       </div>`;
     await Promise.all([
+      this.#fillReleases(container).catch(() => container.querySelector('#other-releases')?.remove()),
       this.#fillDecisions(container).catch((error) => {
         const target = container.querySelector('#decisions');
         if (target) {
