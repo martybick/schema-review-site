@@ -54,6 +54,46 @@ export function getConstructLink (
   return getReleaseLink(packageName, `/constructs/${encodeSegment(kind)}/${encodeSegment(name)}`);
 }
 
+export function getDecisionLink (
+  packageName,
+  decisionID = ''
+) {
+  return getReleaseLink(packageName, decisionID ? `/decisions/${encodeSegment(decisionID)}` : '/decisions');
+}
+
+// NOTE: returns the package's decision register, or null when the package
+// has none.
+export async function loadDecisions (
+  store,
+  packageEntry
+) {
+  try {
+    return await store.readJSON(packageEntry.name, 'decisions/decisions.json');
+  } catch (error) {
+    return null;
+  }
+}
+
+// NOTE: the register's choice reads "Decided 2026-11-16: B, a new element.
+// Drafted as..."; this finds the option letter (B).
+export function getProposedOption (
+  decision
+) {
+  const match = /:\s*([A-Z])\b/.exec(decision.modelingChoice ?? '');
+  return match ? match[1] : null;
+}
+
+// NOTE: the part of the choice before the first full stop.
+export function summarizeChoice (
+  modelingChoice
+) {
+  if (!modelingChoice) {
+    return '';
+  }
+  const text = modelingChoice.replace(/^Decided\s+\S+:\s*/, '');
+  return text.split(/\.\s/)[0].replace(/\.$/, '');
+}
+
 export function renderMessage (
   container,
   text,

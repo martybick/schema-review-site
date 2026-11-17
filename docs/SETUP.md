@@ -11,29 +11,36 @@
    npm install
    ```
 
-2. **Write the invitation list.** Copy `config/members.example.json` to `config/members.json` and
-   list the admins (Xcential staff who run the review) and users (everyone else invited). This file
-   is not committed.
+2. **Name the owners.** Copy `config/members.example.json` to `config/members.json` and list the
+   owners under `admins` (Xcential staff who run the review). Owners always have admin access, even
+   if the People page is emptied. `users` may stay empty: everyone else is invited on the People
+   page. This file is not committed.
 
-3. **Deploy:** `npm run deploy`. It regenerates `storage.rules` from the invitation list, then
-   deploys Hosting and the Storage rules. The site is at https://uslm-166f4.web.app.
+3. **Create the Firestore database** (once) in the Firebase console: Firestore Database → Create
+   database, production mode. Comments, positions, recorded decisions and the People list live there.
+
+4. **Deploy:** `npm run deploy`. It regenerates `storage.rules` and `firestore.rules` from the owners
+   list, then deploys Hosting and both sets of rules. The first time, Firebase may ask whether Cloud
+   Storage may read Firestore (the Storage rules look up the People list); answer yes. The site is at https://uslm-166f4.web.app.
    No CORS setting is needed: the site reads Storage through Firebase's API, which accepts any
    origin, and `storage.rules` decides who may read. (`cors.json` is kept in case packages are
    ever read straight from the bucket's `storage.googleapis.com` address.)
 
-4. **Check sign-in settings** in the Firebase console, Authentication → Sign-in method:
+5. **Check sign-in settings** in the Firebase console, Authentication → Sign-in method:
    - **Google** enabled, for "Sign in with Google".
    - **Email/Password** with **both** switches on, Email/Password and **Email link (passwordless
      sign-in)**. Without the second, asking for a link fails with `auth/operation-not-allowed`.
 
 ## Inviting people
 
-Add the address to `config/members.json` (under `admins` or `users`) and run `npm run deploy`. Tell
-the person to open the site and choose **Sign in with Google** if that address is a Google account
+An admin opens **People**, types the address, picks Member or Admin and chooses **Add person**. No
+deploy is needed. The site sends no email itself; the confirmation offers a ready-made invitation
+that opens in the admin's mail program. Tell the person to open the site and choose **Sign in with Google** if that address is a Google account
 (Google Workspace included), or ask for a sign-in link by email. Someone not on the list can still ask for a
 link, but sees "No Access Yet" and can read nothing.
 
-Removing someone works the same way: delete the address and deploy.
+To remove someone, choose **Remove** next to their address. Their comments and positions stay.
+Owners are removed only by editing `config/members.json` and deploying.
 
 ## Importing a release package
 

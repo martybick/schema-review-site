@@ -15,12 +15,12 @@ import { fileURLToPath } from 'node:url';
 // Functions
 // ----------------------------------------------------------------------------
 
-// NOTE: writes storage.rules from scripts/storage.rules.template and the
-// invitation list in config/members.json (not committed; see
-// config/members.example.json). Xcential invites people by adding their email
-// address here, then running `npm run rules` and deploying the rules.
-// TODO: move membership into the site's database when it exists, so admins
-// invite people from the site instead of redeploying rules.
+// NOTE: writes storage.rules and firestore.rules from their templates in
+// scripts/ and config/members.json (not committed; see
+// config/members.example.json). The admins listed there are owners: they
+// always have access, so the site cannot be locked out. Everyone else is
+// invited on the site's People page and stored in the database; the "users"
+// list here still works, for people invited before the People page existed.
 async function buildRules () {
   const rootPath = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const membersPath = path.join(rootPath, 'config', 'members.json');
@@ -30,12 +30,14 @@ async function buildRules () {
   if (admins.length === 0) {
     throw new Error('config/members.json must list at least one admin');
   }
-  const template = await readFile(path.join(rootPath, 'scripts', 'storage.rules.template'), 'utf8');
-  const rules = template
-    .replace('__ADMINS__', formatList(admins))
-    .replace('__USERS__', formatList(users));
-  await writeFile(path.join(rootPath, 'storage.rules'), rules);
-  console.log(`storage.rules written: ${admins.length} admins, ${users.length} users`);
+  for (const name of ['storage.rules', 'firestore.rules']) {
+    const template = await readFile(path.join(rootPath, 'scripts', `${name}.template`), 'utf8');
+    const rules = template
+      .replaceAll('__ADMINS__', formatList(admins))
+      .replaceAll('__USERS__', formatList(users));
+    await writeFile(path.join(rootPath, name), rules);
+  }
+  console.log(`storage.rules and firestore.rules written: ${admins.length} owners, ${users.length} users from config/members.json (invite others on the People page)`);
 }
 
 function normalizeEmails (

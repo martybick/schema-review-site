@@ -8,7 +8,9 @@
 // ----------------------------------------------------------------------------
 
 import { escapeHTML, formatDate, formatNumber } from '../html.js';
-import { getConstructLink, getReleaseLink, groupSamples, loadSchemaIndex } from './shared.js';
+import { DataStore } from '../DataStore.js';
+import { countPositions, renderStatusPill, renderTally } from './DecisionPage.js';
+import { getConstructLink, getDecisionLink, getReleaseLink, groupSamples, loadDecisions, loadSchemaIndex, summarizeChoice } from './shared.js';
 
 // ----------------------------------------------------------------------------
 // ReleaseHomePage
@@ -44,9 +46,11 @@ export class ReleaseHomePage {
 
   constructor (
     store,
+    dataStore,
     packageEntry
   ) {
     this.store = store;
+    this.dataStore = dataStore;
     this.packageEntry = packageEntry;
     this.manifest = packageEntry.manifest;
   }
@@ -131,24 +135,31 @@ export class ReleaseHomePage {
     if (!target) {
       return;
     }
-    let decisions;
-    try {
-      decisions = await this.store.readJSON(this.packageEntry.name, 'decisions/decisions.json');
-    } catch (error) {
+    const register = await loadDecisions(this.store, this.packageEntry);
+    if (register === null) {
       target.innerHTML = '<p class="muted">This package has no decision records.</p>';
       return;
     }
-    const proposed = decisions.decisions.filter((decision) => decision.status === 'proposed');
-    const rows = proposed.map((decision) => `
-      <li>
-        <strong style="color: var(--navy); min-width: 40px">${escapeHTML(decision.id)}</strong>
-        <span style="flex: 1 1 320px; font-weight: 600; font-size: 14px">${escapeHTML(decision.title)}</span>
-        <span class="small muted">${escapeHTML(summarizeChoice(decision.modelingChoice))}</span>
-      </li>`).join('');
-    const openIssues = decisions.openIssues.map((issue) => `<li>${escapeHTML(issue.title)}</li>`).join('');
+    const project = this.manifest.project;
+    const [records, positions] = await Promise.all([
+      this.dataStore.listDecisionRecords(project),
+      this.dataStore.listPositions(project)
+    ]);
+    const rows = register.decisions.map((decision) => {
+      const key = DataStore.getDecisionKey(project, decision.id);
+      return `
+        <li>
+          <strong style="color: var(--navy); min-width: 40px">${escapeHTML(decision.id)}</strong>
+          <span style="flex: 1 1 320px; font-size: 14px"><a style="font-weight: 600" href="${getDecisionLink(this.packageEntry.name, decision.id)}">${escapeHTML(decision.title)}</a><br><span class="small muted">Proposed: ${escapeHTML(summarizeChoice(decision.modelingChoice))}</span></span>
+          ${renderStatusPill(records.get(key))}
+          ${renderTally(countPositions(positions.filter((entry) => entry.decisionKey === key)))}
+        </li>`;
+    }).join('');
+    const openIssues = register.openIssues.map((issue) => `<li>${escapeHTML(issue.title)}</li>`).join('');
     target.innerHTML = `
-      <h2 id="decisions-heading">Decisions Awaiting Ratification</h2>
-      ${proposed.length === 0 ? '<p class="muted">None.</p>' : `<ul class="list-rows">${rows}</ul>`}
+      <h2 id="decisions-heading">Decisions</h2>
+      <p class="small muted">Open a decision to state your position and comment. <a href="${getDecisionLink(this.packageEntry.name)}">See all decisions as a table</a>.</p>
+      ${register.decisions.length === 0 ? '<p class="muted">None.</p>' : `<ul class="list-rows">${rows}</ul>`}
       ${openIssues ? `<h3>Still Open</h3><ul class="stack stack--tight" style="margin: 0; padding-left: 20px; font-size: 14px">${openIssues}</ul>` : ''}`;
   }
 
@@ -245,7 +256,12 @@ export class ReleaseHomePage {
         </aside>
       </div>`;
     await Promise.all([
-      this.#fillDecisions(container),
+      this.#fillDecisions(container).catch((error) => {
+        const target = container.querySelector('#decisions');
+        if (target) {
+          target.innerHTML = `<p class="message message--error" role="alert">Could not load decisions: ${escapeHTML(error.message)}</p>`;
+        }
+      }),
       this.#resolveFileLinks(container),
       this.#fillChanges(container).catch((error) => {
         const target = container.querySelector('#changes');
@@ -260,19 +276,6 @@ export class ReleaseHomePage {
 // ----------------------------------------------------------------------------
 // Functions
 // ----------------------------------------------------------------------------
-
-// NOTE: the register's choice reads "Decided 2026-11-16: B, a new element.
-// Drafted as..."; the list shows only the part before the first full stop.
-function summarizeChoice (
-  modelingChoice
-) {
-  if (!modelingChoice) {
-    return '';
-  }
-  const text = modelingChoice.replace(/^Decided\s+\S+:\s*/, '');
-  const firstSentence = text.split(/\.\s/)[0];
-  return `Modeling choice: ${firstSentence.replace(/\.$/, '')}`;
-}
 
 function endSentence (
   text

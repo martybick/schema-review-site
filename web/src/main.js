@@ -8,12 +8,15 @@
 // ----------------------------------------------------------------------------
 
 import { AuthController } from './AuthController.js';
+import { DataStore } from './DataStore.js';
 import { escapeHTML } from './html.js';
 import { PackageStore } from './PackageStore.js';
 import { ConstructListPage, ConstructPage } from './pages/ConstructPage.js';
+import { DecisionListPage, DecisionPage } from './pages/DecisionPage.js';
 import { ImportPage } from './pages/ImportPage.js';
 import { ReleaseHomePage } from './pages/ReleaseHomePage.js';
 import { renderMessage, renderNoPackages } from './pages/shared.js';
+import { PeoplePage } from './pages/PeoplePage.js';
 import { NotInvitedPage, SignInPage } from './pages/SignInPage.js';
 import { ValidationPage } from './pages/ValidationPage.js';
 import { Router } from './Router.js';
@@ -35,15 +38,20 @@ class SiteApp {
     this.container = document.getElementById('app');
     this.authController = new AuthController();
     this.store = new PackageStore();
+    this.dataStore = new DataStore(this.authController);
     this.router = new Router()
       .addRoute('home', '')
       .addRoute('constructs', 'constructs')
       .addRoute('validation', 'validation')
+      .addRoute('decisions', 'decisions')
+      .addRoute('people', 'people')
       .addRoute('import', 'import')
       .addRoute('release', 'releases/:packageName')
       .addRoute('release-validation', 'releases/:packageName/validation')
       .addRoute('release-constructs', 'releases/:packageName/constructs')
-      .addRoute('construct', 'releases/:packageName/constructs/:kind/:name');
+      .addRoute('construct', 'releases/:packageName/constructs/:kind/:name')
+      .addRoute('release-decisions', 'releases/:packageName/decisions')
+      .addRoute('decision', 'releases/:packageName/decisions/:decisionID');
     this.renderCount = 0;
   }
 
@@ -59,6 +67,7 @@ class SiteApp {
     const isMember = this.authController.isMember;
     nav.hidden = !isMember;
     document.getElementById('nav-import').hidden = !this.authController.isAdmin;
+    document.getElementById('nav-people').hidden = !this.authController.isAdmin;
     const section = {
       home: 'releases',
       release: 'releases',
@@ -67,6 +76,10 @@ class SiteApp {
       construct: 'constructs',
       validation: 'validation',
       'release-validation': 'validation',
+      decisions: 'decisions',
+      'release-decisions': 'decisions',
+      decision: 'decisions',
+      people: 'people',
       import: 'import'
     }[route.name];
     for (const link of nav.querySelectorAll('a[data-nav]')) {
@@ -131,6 +144,14 @@ class SiteApp {
       await new ImportPage(this.store, () => this.store.clearCache()).render(this.container);
       return;
     }
+    if (route.name === 'people') {
+      if (!this.authController.isAdmin) {
+        renderMessage(this.container, 'Only admins can manage people.', true);
+        return;
+      }
+      await new PeoplePage(this.dataStore, this.authController).render(this.container);
+      return;
+    }
     const packageEntry = await this.#findPackageEntry(route.params);
     if (packageEntry === null) {
       if (route.params.packageName) {
@@ -141,13 +162,16 @@ class SiteApp {
       return;
     }
     const page = {
-      home: () => new ReleaseHomePage(this.store, packageEntry),
-      release: () => new ReleaseHomePage(this.store, packageEntry),
+      home: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry),
+      release: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry),
       validation: () => new ValidationPage(this.store, packageEntry),
       'release-validation': () => new ValidationPage(this.store, packageEntry),
       constructs: () => new ConstructListPage(this.store, packageEntry),
       'release-constructs': () => new ConstructListPage(this.store, packageEntry),
-      construct: () => new ConstructPage(this.store, packageEntry, route.params.kind, route.params.name)
+      construct: () => new ConstructPage(this.store, this.dataStore, this.authController, packageEntry, route.params.kind, route.params.name),
+      decisions: () => new DecisionListPage(this.store, this.dataStore, packageEntry),
+      'release-decisions': () => new DecisionListPage(this.store, this.dataStore, packageEntry),
+      decision: () => new DecisionPage(this.store, this.dataStore, this.authController, packageEntry, route.params.decisionID)
     }[route.name];
     if (!page) {
       renderMessage(this.container, 'Page not found.', true);
@@ -176,7 +200,7 @@ class SiteApp {
     } catch (error) {
       if (renderNumber === this.renderCount) {
         console.error(error);
-        const text = error.code === 'storage/unauthorized'
+        const text = error.code === 'storage/unauthorized' || error.code === 'permission-denied'
           ? 'You do not have access to this content.'
           : `Something went wrong: ${error.message}`;
         renderMessage(this.container, text, true);

@@ -76,11 +76,12 @@ with sync_playwright() as playwright:
     page.goto(SITE + '/#/')
     expect(page.get_by_role('heading', name='USLM 2.2.0-rc1')).to_be_visible(timeout=30000)
     expect(page.get_by_role('heading', name='Changes Since 2.1.0')).to_be_visible(timeout=60000)
+    expect(page.get_by_role('heading', name='Decisions', exact=True)).to_be_visible(timeout=30000)
     body = page.inner_text('main')
     check('28 of 28' in body and '117 of 143' in body, 'release home shows 28 of 28 and 117 of 143 valid')
     check('136 in 9 samples' in body, 'release home shows 136 rule errors in 9 samples')
     check('10 of 126 samples valid under 2.1.0 are now invalid' in body, 'release home shows the compatibility break')
-    check('How to record a floor vote by name' in body and 'Modeling choice: B, a new element' in body, 'decision D1 listed with its modeling choice')
+    check('How to record a floor vote by name' in body and 'Proposed: B, a new element' in body, 'decision D1 listed with its proposed choice')
     check('hdoc and floor-day patterns' in body, 'D5 open part listed')
     rows = page.locator('#changes tbody tr').all_inner_texts()
     print('changes rows:', rows)
@@ -115,6 +116,43 @@ with sync_playwright() as playwright:
     page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/constructs/element/citableAsShortTitle')
     expect(page.get_by_text('Defined differently in 2.1.0')).to_be_visible(timeout=60000)
     check(True, 'citableAsShortTitle shows as changed since 2.1.0')
+
+    # Slice 2 as admin: a comment, a position, and inviting someone.
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/constructs/element/rollCall')
+    expect(page.get_by_role('heading', name='Add a Comment')).to_be_visible(timeout=60000)
+    page.get_by_label('Type').select_option('naming')
+    page.get_by_role('textbox', name='Comment').fill('Should `rollCall` be named `floorVote`?')
+    page.get_by_role('button', name='Post comment').click()
+    expect(page.get_by_role('heading', name='Comments (1)')).to_be_visible(timeout=15000)
+    check(page.locator('.comment-body code', has_text='floorVote').count() == 1, 'admin posts a naming comment on rollCall, with code formatting')
+
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/decisions/D1')
+    expect(page.get_by_role('heading', name='How to record a floor vote by name')).to_be_visible(timeout=30000)
+    check(page.locator('.choice-list li.is-chosen', has_text='Option B').count() == 1, 'D1 marks option B as proposed')
+    page.get_by_label('Support').check()
+    page.get_by_label('Reason (optional)').fill('Clearer for floor votes.')
+    page.get_by_role('button', name='Save position').click()
+    expect(page.get_by_text('1 support')).to_be_visible(timeout=15000)
+    check(page.locator('p.small', has_text='Clearer for floor votes.').is_visible(), 'admin states a position with a reason')
+
+    page.goto(SITE + '/#/decisions')
+    expect(page.get_by_role('heading', name='Decisions', exact=True)).to_be_visible(timeout=30000)
+    check(page.locator('tbody tr').count() == 12, 'decision list shows D1 to D12')
+    check('0 of 12 settled' in page.inner_text('main'), 'decision list shows none settled')
+
+    check(page.locator('#nav-people').is_visible(), 'admin sees People')
+    page.goto(SITE + '/#/people')
+    expect(page.get_by_role('heading', name='Invite Someone')).to_be_visible(timeout=15000)
+    page.get_by_label('Email address').fill('Newcomer@Test.example')
+    page.get_by_role('button', name='Add person').click()
+    expect(page.get_by_text('newcomer@test.example can now sign in.')).to_be_visible(timeout=15000)
+    check(page.locator('tbody th', has_text='newcomer@test.example').count() == 1, 'admin adds newcomer@test.example on the People page (lower-cased)')
+    check('mailto:newcomer%40test.example' in page.content(), 'People page offers a ready-made invitation email')
+    page.get_by_label('Email address').fill('newcomer@test.example')
+    page.get_by_role('button', name='Add person').click()
+    expect(page.get_by_text('already on the list')).to_be_visible()
+    check(True, 'adding the same person twice is refused')
+    page.screenshot(path=f'{SHOTS}/6-people.png', full_page=True)
     context.close()
 
     # Invited user: a shared link survives sign-in; no import; staying signed in.
@@ -129,17 +167,47 @@ with sync_playwright() as playwright:
     page.reload()
     expect(page.get_by_role('heading', name='<rollCall>')).to_be_visible(timeout=30000)
     check(not page.get_by_text('you will stay signed in.').is_visible(), 'the welcome note stays dismissed after a reload')
-    check(page.get_by_text('member@test.example').is_visible(), 'still signed in after a reload')
+    check(page.locator('#site-user').get_by_text('member@test.example').is_visible(), 'still signed in after a reload')
     page.goto(SITE + '/#/')
     expect(page.get_by_role('heading', name='USLM 2.2.0-rc1')).to_be_visible(timeout=30000)
     check(not page.locator('#nav-import').is_visible(), 'user does not see Import package')
     page.goto(SITE + '/#/import')
     expect(page.get_by_text('Only admins can import release packages.')).to_be_visible()
     check(True, 'user is refused the import page')
+
+    # Slice 2 as a member: reply, oppose, and the rules hold.
+    check(not page.locator('#nav-people').is_visible(), 'user does not see People')
+    page.goto(SITE + '/#/people')
+    expect(page.get_by_text('Only admins can manage people.')).to_be_visible()
+    check(True, 'user is refused the People page')
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/constructs/element/rollCall')
+    expect(page.get_by_role('heading', name='Comments (1)')).to_be_visible(timeout=60000)
+    page.get_by_role('button', name='Reply').click()
+    page.get_by_label('Your reply').fill('Keep rollCall; it is the Clerk\'s term.')
+    page.get_by_role('button', name='Post reply').click()
+    expect(page.get_by_text("it is the Clerk's term")).to_be_visible(timeout=15000)
+    check(page.locator('select[data-status-for]').count() == 0, 'member replies, and sees no status control')
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/decisions/D1')
+    expect(page.get_by_text('1 support')).to_be_visible(timeout=30000)
+    page.get_by_label('Oppose').check()
+    page.get_by_role('button', name='Save position').click()
+    expect(page.get_by_text('1 oppose')).to_be_visible(timeout=15000)
+    check(page.locator('#record-form').count() == 0, 'member opposes D1, and sees no outcome form')
+    denied = page.evaluate("""async () => {
+      const { services } = await import('/src/firebase.js');
+      const fs = await import('https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js');
+      const results = {};
+      const attempt = async (name, work) => { try { await work(); results[name] = 'allowed'; } catch (error) { results[name] = error.code; } };
+      await attempt('member', () => fs.setDoc(fs.doc(services.db, 'members', 'me@test.example'), { email: 'me@test.example', role: 'admin', addedBy: 'member@test.example', addedAt: fs.serverTimestamp() }));
+      await attempt('record', () => fs.setDoc(fs.doc(services.db, 'decisionRecords', 'uslm-D2'), { decisionKey: 'uslm-D2', project: 'uslm', decisionID: 'D2', status: 'ratified', option: 'A', note: '', recordedBy: 'member@test.example', recordedAt: fs.serverTimestamp() }));
+      await attempt('otherPosition', () => fs.setDoc(fs.doc(services.db, 'positions', 'uslm-D2__admin@test.example'), { decisionKey: 'uslm-D2', project: 'uslm', email: 'admin@test.example', name: 'x', position: 'support', reason: '', updatedAt: fs.serverTimestamp() }));
+      return results;
+    }""")
+    check(all(value == 'permission-denied' for value in denied.values()), f'a member cannot add people, record decisions or speak for others: {denied}')
     page.once('dialog', lambda dialog: dialog.dismiss())
     page.get_by_role('button', name='Sign out').click()
     page.wait_for_timeout(1000)
-    check(page.get_by_text('member@test.example').is_visible(), 'cancelling the sign-out question keeps the person signed in')
+    check(page.locator('#site-user').get_by_text('member@test.example').is_visible(), 'cancelling the sign-out question keeps the person signed in')
     page.once('dialog', lambda dialog: dialog.accept())
     page.get_by_role('button', name='Sign out').click()
     expect(page.get_by_role('heading', name='Sign In to USLM 2 Review')).to_be_visible(timeout=15000)
@@ -186,6 +254,73 @@ with sync_playwright() as playwright:
     expect(google_page.get_by_role('heading', name='Validation and Coverage')).to_be_visible(timeout=30000)
     check(True, 'Sign in with Google works for an invited address and keeps the page')
     google_page.context.close()
+
+    # Admin ratifies D1; positions close, even when written directly.
+    context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+    page = context.new_page()
+    sign_in(page, 'admin@test.example', '/#/releases/uslm-2.2.0-rc1/decisions/D1')
+    expect(page.get_by_role('heading', name='Record the Outcome')).to_be_visible(timeout=30000)
+    page.get_by_label('Note (for example, the meeting and what was said)').fill('Working group meeting, 2026-12-03.')
+    page.get_by_role('button', name='Record').click()
+    expect(page.get_by_text('Positions are closed')).to_be_visible(timeout=15000)
+    check(page.locator('h1 + .pill', has_text='Ratified').count() == 1, 'admin ratifies D1')
+    check(page.locator('p.small', has_text='Working group meeting, 2026-12-03.').is_visible(), 'the ratification note shows in the history')
+    page.screenshot(path=f'{SHOTS}/7-decision.png', full_page=True)
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/constructs/element/rollCall')
+    expect(page.locator('select[data-status-for]')).to_be_visible(timeout=60000)
+    page.locator('select[data-status-for]').select_option('rejected')
+    page.wait_for_timeout(1500)
+    page.reload()
+    expect(page.locator('select[data-status-for]')).to_have_value('rejected', timeout=60000)
+    check(True, 'admin marks the naming comment rejected')
+    context.close()
+
+    context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+    page = context.new_page()
+    sign_in(page, 'member@test.example', '/#/releases/uslm-2.2.0-rc1/decisions/D1')
+    expect(page.get_by_text('Positions are closed')).to_be_visible(timeout=30000)
+    blocked = page.evaluate("""async () => {
+      const { services } = await import('/src/firebase.js');
+      const fs = await import('https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js');
+      try {
+        await fs.setDoc(fs.doc(services.db, 'positions', 'uslm-D1__member@test.example'), { decisionKey: 'uslm-D1', project: 'uslm', email: 'member@test.example', name: 'm', position: 'support', reason: '', updatedAt: fs.serverTimestamp() });
+        return 'allowed';
+      } catch (error) { return error.code; }
+    }""")
+    check(blocked == 'permission-denied', f'positions on a ratified decision are refused by the rules: {blocked}')
+    context.close()
+
+    # Someone invited on the People page: the database rules treat them as a
+    # member. KLUDGE: the Storage emulator's lookup of the members list goes
+    # through this workspace's HTTPS proxy, which refuses it, so whether they
+    # can also read packages is checked on the live site after deploying.
+    context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+    page = context.new_page()
+    sign_in(page, 'newcomer@test.example')
+    page.wait_for_timeout(3000)
+    newcomer = page.evaluate("""async () => {
+      const { services } = await import('/src/firebase.js');
+      const fs = await import('https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js');
+      const results = {};
+      const attempt = async (name, work) => { try { await work(); results[name] = 'allowed'; } catch (error) { results[name] = error.code; } };
+      await attempt('readMembers', () => fs.getDocs(fs.collection(services.db, 'members')));
+      await attempt('comment', () => fs.addDoc(fs.collection(services.db, 'comments'), { target: 'uslm|decision|D2', project: 'uslm', release: '2.2.0-rc1', targetKind: 'decision', targetKey: 'D2', type: 'question', body: 'Does this cover Senate votes?', parentID: null, authorEmail: 'newcomer@test.example', authorName: 'newcomer@test.example', createdAt: fs.serverTimestamp(), status: 'open' }));
+      await attempt('position', () => fs.setDoc(fs.doc(services.db, 'positions', 'uslm-D2__newcomer@test.example'), { decisionKey: 'uslm-D2', project: 'uslm', email: 'newcomer@test.example', name: 'n', position: 'abstain', reason: '', updatedAt: fs.serverTimestamp() }));
+      return results;
+    }""")
+    check(all(value == 'allowed' for value in newcomer.values()), f'a person added on the People page can read, comment and state positions: {newcomer}')
+    context.close()
+
+    stranger = browser.new_context().new_page()
+    sign_in(stranger, 'stranger@test.example')
+    stranger.wait_for_timeout(3000)
+    refused = stranger.evaluate("""async () => {
+      const { services } = await import('/src/firebase.js');
+      const fs = await import('https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js');
+      try { await fs.getDocs(fs.collection(services.db, 'comments')); return 'allowed'; } catch (error) { return error.code; }
+    }""")
+    check(refused == 'permission-denied', f'an uninvited person cannot read comments: {refused}')
+    stranger.context.close()
 
     # Uninvited address.
     context = browser.new_context(viewport={'width': 390, 'height': 844})

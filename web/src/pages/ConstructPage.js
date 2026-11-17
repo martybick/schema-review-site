@@ -7,8 +7,9 @@
 // Imports & dependencies
 // ----------------------------------------------------------------------------
 
+import { CommentThread } from '../CommentThread.js';
 import { escapeHTML, formatNumber } from '../html.js';
-import { getConstructLink, getReleaseLink, loadSchemaIndex } from './shared.js';
+import { getConstructLink, getDecisionLink, getReleaseLink, loadSchemaIndex, summarizeChoice } from './shared.js';
 
 // ----------------------------------------------------------------------------
 // ConstructPage
@@ -38,11 +39,15 @@ export class ConstructPage {
 
   constructor (
     store,
+    dataStore,
+    authController,
     packageEntry,
     kind,
     name
   ) {
     this.store = store;
+    this.dataStore = dataStore;
+    this.authController = authController;
     this.packageEntry = packageEntry;
     this.kind = kind;
     this.name = name;
@@ -139,9 +144,9 @@ export class ConstructPage {
     }
     const items = related.map((decision) => `
       <li class="panel--navy" style="border-radius: var(--radius-md); padding: 16px; list-style: none">
-        <p class="eyebrow">${escapeHTML(decision.id)} · ${escapeHTML(decision.status)}</p>
-        <p style="font-weight: 600">${escapeHTML(decision.title)}</p>
-        ${decision.modelingChoice ? `<p class="small" style="color: var(--blue-200)">Modeling choice: ${escapeHTML(decision.modelingChoice.replace(/^Decided\s+\S+:\s*/, '').split(/\.\s/)[0].replace(/\.$/, ''))}.</p>` : ''}
+        <p class="eyebrow">${escapeHTML(decision.id)}</p>
+        <p style="font-weight: 600"><a style="color: #ffffff" href="${getDecisionLink(this.packageEntry.name, decision.id)}">${escapeHTML(decision.title)}</a></p>
+        ${decision.modelingChoice ? `<p class="small" style="color: var(--blue-200)">Proposed: ${escapeHTML(summarizeChoice(decision.modelingChoice))}.</p>` : ''}
       </li>`).join('');
     target.innerHTML = `<h3>Decisions That Name It</h3><ul class="stack" style="margin: 0; padding: 0">${items}</ul>`;
   }
@@ -192,13 +197,17 @@ export class ConstructPage {
         <aside class="row__side">
           <section class="stack" id="related-decisions"><p class="muted small" role="status">Looking for related decisions…</p></section>
           <section class="stack" id="history"><p class="muted small" role="status">Checking history…</p></section>
-          <section class="stack">
-            <h3>Comments</h3>
-            <p class="small muted">Comments on constructs arrive with issues and decisions in a later slice.</p>
-          </section>
         </aside>
-      </div>`;
+      </div>
+      <section class="stack" id="construct-comments" aria-labelledby="comments-heading"></section>`;
+    const commentThread = new CommentThread(this.dataStore, this.authController, {
+      project: manifest.project,
+      release: manifest.release,
+      kind: 'construct',
+      key: `${this.kind}:${this.name}`
+    });
     await Promise.all([
+      commentThread.render(container.querySelector('#construct-comments')),
       this.#fillDecisions(container),
       this.#fillHistory(container, construct).catch((error) => {
         container.querySelector('#history').innerHTML = `<p class="small muted">Could not check history: ${escapeHTML(error.message)}</p>`;

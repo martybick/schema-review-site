@@ -12,7 +12,7 @@
     "lint": "semistandard scripts web/src",
     "test": "python3 tests/e2e/test_site.py",
     "emulators": "firebase emulators:start",
-    "deploy": "npm run rules && firebase deploy --only hosting,storage"
+    "deploy": "npm run rules && firebase deploy --only hosting,storage,firestore"
   },
   "devDependencies": {
     "semistandard": "17.0.0"

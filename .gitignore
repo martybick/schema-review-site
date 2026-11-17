@@ -4,5 +4,6 @@ node_modules/
 .DS_Store
 config/members.json
 storage.rules
+firestore.rules
 tests/e2e/shots/
 __pycache__/

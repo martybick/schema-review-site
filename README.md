@@ -21,8 +21,19 @@ decision records.
 - **Constructs:** a searchable list, and a page per construct with its documentation, content model,
   where it is used, its XSD source with real line numbers, related decisions and its history.
 
-Not yet: comments, positions, ratifying decisions, re-running validation on demand, alternatives
-from branches, bulk corpora, legacy conversion, the monthly log. See the design doc for the plan.
+## What slice 2 adds
+
+- **People** (admins): invite people, set Member or Admin, remove them, with no deploy.
+- **Decisions:** a list and a page per decision with its options and the proposed choice. Members
+  state a position (support, oppose, abstain, with a reason). Admins record the outcome (ratified,
+  changed to another option, reopened) with a note; every recording is kept as history, and
+  positions close while a decision is settled.
+- **Comments** on constructs and decisions: typed (defect, gap, naming, documentation, alternative,
+  question, editorial), with replies; admins set a status (open, accepted, rejected, deferred,
+  addressed). Each comment records the release it was made on.
+
+Not yet: re-running validation on demand, alternatives from branches, bulk corpora, legacy
+conversion, the monthly log. See the design doc for the plan.
 
 ## How it is built
 
@@ -30,14 +41,17 @@ from branches, bulk corpora, legacy conversion, the monthly log. See the design 
   coding conventions (Semistandard; `npm run lint`).
 - Firebase: Hosting serves `web/`; Authentication (Google, and email link); Storage holds packages under
   `packages/<project>-<release>/`. The Firebase SDK loads from Google's CDN, pinned to one version.
-- Access is enforced by `storage.rules`, generated from the invitation list (see below).
+- Firestore holds what people add: `members`, `comments`, `positions`, `decisionRecords` and
+  `decisionEvents`. Release packages are never changed there.
+- Access is enforced by `storage.rules` and `firestore.rules`, generated from the owners list; both
+  read the People list from Firestore.
 
 | Path | What |
 | --- | --- |
 | `web/` | The site: `index.html`, `styles/site.css` (Xcential design tokens), `src/` |
 | `web/src/siteConfig.js` | Everything specific to one deployment: site name, Firebase config |
-| `scripts/buildRules.js` | Writes `storage.rules` from `scripts/storage.rules.template` and `config/members.json` |
-| `config/members.example.json` | The shape of the invitation list; the real `config/members.json` is not committed |
+| `scripts/buildRules.js` | Writes `storage.rules` and `firestore.rules` from their templates and `config/members.json` |
+| `config/members.example.json` | The shape of the owners list; the real `config/members.json` is not committed |
 | `cors.json` | Lets the site read files from the Storage bucket |
 | `tests/e2e/` | End-to-end test against the Firebase emulators |
 | `docs/SETUP.md` | First deployment, inviting people, importing packages |
@@ -47,7 +61,7 @@ from branches, bulk corpora, legacy conversion, the monthly log. See the design 
 ```
 npm install
 npm run lint          # Xcential conventions (Semistandard)
-npm run rules         # regenerate storage.rules after changing config/members.json
-npm run emulators     # run locally at http://127.0.0.1:5000 with the Auth and Storage emulators
-npm run deploy        # rules, then Hosting and Storage
+npm run rules         # regenerate both rules files after changing config/members.json
+npm run emulators     # run locally at http://127.0.0.1:5000 with the Auth, Firestore and Storage emulators
+npm run deploy        # rules, then Hosting, Storage and Firestore
 ```
