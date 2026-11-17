@@ -15,18 +15,15 @@
    list the admins (Xcential staff who run the review) and users (everyone else invited). This file
    is not committed.
 
-3. **Let the site read from Storage (once).** Browsers need the bucket to allow the site's address.
-   In the Google Cloud console for `uslm-166f4`, open Cloud Shell, upload `cors.json`, and run:
-
-   ```
-   gcloud storage buckets update gs://uslm-166f4.firebasestorage.app --cors-file=cors.json
-   ```
-
-4. **Deploy:** `npm run deploy`. It regenerates `storage.rules` from the invitation list, then
+3. **Deploy:** `npm run deploy`. It regenerates `storage.rules` from the invitation list, then
    deploys Hosting and the Storage rules. The site is at https://uslm-166f4.web.app.
+   No CORS setting is needed: the site reads Storage through Firebase's API, which accepts any
+   origin, and `storage.rules` decides who may read. (`cors.json` is kept in case packages are
+   ever read straight from the bucket's `storage.googleapis.com` address.)
 
-5. **Check sign-in settings** in the Firebase console, Authentication: Email/Password enabled with
-   **Email link (passwordless sign-in)**; `uslm-166f4.web.app` among the authorized domains.
+4. **Check sign-in settings** in the Firebase console, Authentication → Sign-in method →
+   Email/Password: **both** switches on, Email/Password and **Email link (passwordless sign-in)**.
+   Without the second, asking for a link fails with `auth/operation-not-allowed`.
 
 ## Inviting people
 
