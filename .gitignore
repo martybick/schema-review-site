@@ -1,0 +1,8 @@
+node_modules/
+.firebase/
+*-debug.log
+.DS_Store
+config/members.json
+storage.rules
+tests/e2e/shots/
+__pycache__/

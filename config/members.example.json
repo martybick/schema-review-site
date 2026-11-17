@@ -1,0 +1,8 @@
+{
+  "admins": [
+    "admin@example.com"
+  ],
+  "users": [
+    "member@example.org"
+  ]
+}

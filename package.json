@@ -1,0 +1,25 @@
+{
+  "name": "schema-review-site",
+  "version": "0.1.0",
+  "description": "Review site for a working group modeling an XML schema: releases, validation against real documents, and the decision record",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "rules": "node scripts/buildRules.js",
+    "lint": "semistandard scripts web/src",
+    "test": "python3 tests/e2e/test_site.py",
+    "emulators": "firebase emulators:start",
+    "deploy": "npm run rules && firebase deploy --only hosting,storage"
+  },
+  "devDependencies": {
+    "semistandard": "17.0.0"
+  },
+  "semistandard": {
+    "env": [
+      "browser"
+    ]
+  }
+}

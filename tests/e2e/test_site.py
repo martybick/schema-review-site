@@ -1,0 +1,146 @@
+"""End-to-end check of the schema review site against the Firebase emulators.
+
+Signs in by email link as an admin, imports the 2.1.0 and 2.2.0-rc1 packages,
+checks the release, validation and construct pages, then checks a user and an
+uninvited address. Screenshots go to /home/claude/e2e/shots.
+"""
+import json
+import os
+import shutil
+import tempfile
+import sys
+import time
+import urllib.request
+
+from playwright.sync_api import sync_playwright, expect
+
+SITE = 'http://127.0.0.1:5000'
+OOB = 'http://127.0.0.1:9099/emulator/v1/projects/uslm-166f4/oobCodes'
+PACKAGES = os.environ.get('PACKAGES', '../packages')
+SHOTS = os.environ.get('SHOTS', 'tests/e2e/shots')
+os.makedirs(SHOTS, exist_ok=True)
+failures = []
+
+
+def check(condition, label):
+    print(('PASS ' if condition else 'FAIL ') + label)
+    if not condition:
+        failures.append(label)
+
+
+def sign_in(page, email):
+    page.goto(SITE + '/')
+    page.get_by_label('Email address').fill(email)
+    page.get_by_role('button', name='Email me a sign-in link').click()
+    expect(page.get_by_text('A sign-in link is on its way')).to_be_visible(timeout=15000)
+    codes = json.load(urllib.request.urlopen(OOB))['oobCodes']
+    code = [c for c in codes if c['email'] == email and c['requestType'] == 'EMAIL_SIGNIN'][-1]
+    page.goto(f"{SITE}/?mode=signIn&oobCode={code['oobCode']}&apiKey=fake-api-key&lang=en")
+
+
+with sync_playwright() as playwright:
+    browser = playwright.chromium.launch(executable_path=os.environ.get('CHROME') or None, args=['--no-sandbox'])
+    console_errors = []
+
+    # Admin: sign in, import, browse.
+    context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+    page = context.new_page()
+    page.on('console', lambda message: console_errors.append(message.text + ' ' + str(message.location.get('url'))) if message.type == 'error' else None)
+    sign_in(page, 'admin@test.example')
+    expect(page.get_by_role('heading', name='No Releases Yet')).to_be_visible(timeout=20000)
+    check(page.get_by_text('admin@test.example · Admin').is_visible(), 'admin sees their role in the header')
+    check(page.locator('#nav-import').is_visible(), 'admin sees Import package')
+
+    for package_name in ['uslm-2.1.0', 'uslm-2.2.0-rc1']:
+        page.goto(SITE + '/#/import')
+        expect(page.get_by_role('heading', name='Import a Release Package')).to_be_visible()
+        page.locator('input[name="folder"]').set_input_files(os.path.join(PACKAGES, package_name))
+        page.get_by_role('button', name='Check and import').click()
+        expect(page.get_by_text(f'{package_name} is imported')).to_be_visible(timeout=300000)
+        print(f'imported {package_name}')
+    page.screenshot(path=f'{SHOTS}/1-import.png', full_page=True)
+
+    # A tampered package is refused.
+    page.goto(SITE + '/#/import')
+    tampered_root = tempfile.mkdtemp()
+    tampered = os.path.join(tampered_root, 'uslm-2.1.0')
+    shutil.copytree(os.path.join(PACKAGES, 'uslm-2.1.0'), tampered)
+    with open(f'{tampered}/stylesheets/uslm.css', 'a') as handle:
+        handle.write('\n/* changed */\n')
+    page.locator('input[name="folder"]').set_input_files(tampered)
+    page.get_by_role('button', name='Check and import').click()
+    expect(page.get_by_text('does not match its manifest')).to_be_visible(timeout=60000)
+    check(True, 'a package changed after it was built is refused')
+
+    # Release home.
+    page.goto(SITE + '/#/')
+    expect(page.get_by_role('heading', name='USLM 2.2.0-rc1')).to_be_visible(timeout=30000)
+    expect(page.get_by_role('heading', name='Changes Since 2.1.0')).to_be_visible(timeout=60000)
+    body = page.inner_text('main')
+    check('28 of 28' in body and '117 of 143' in body, 'release home shows 28 of 28 and 117 of 143 valid')
+    check('136 in 9 samples' in body, 'release home shows 136 rule errors in 9 samples')
+    check('10 of 126 samples valid under 2.1.0 are now invalid' in body, 'release home shows the compatibility break')
+    check('How to record a floor vote by name' in body and 'Modeling choice: B, a new element' in body, 'decision D1 listed with its modeling choice')
+    check('hdoc and floor-day patterns' in body, 'D5 open part listed')
+    rows = page.locator('#changes tbody tr').all_inner_texts()
+    print('changes rows:', rows)
+    check(any(row.startswith('Elements\t77\t') for row in rows), 'changes table: 77 new elements, as the packager comparison found')
+    page.screenshot(path=f'{SHOTS}/2-release-home.png', full_page=True)
+
+    # Validation.
+    page.get_by_role('link', name='Validation and coverage').click()
+    expect(page.get_by_role('heading', name='Validation and Coverage')).to_be_visible(timeout=30000)
+    totals = [int(text.replace(',', '')) for text in page.locator('#rule-errors .list-rows > li > span:first-child').all_inner_texts()]
+    print('rule error groups:', totals)
+    check(sum(totals) == 136, 'grouped rule errors add up to 136')
+    check(page.locator('#compatibility li').count() == 10, 'compatibility lists the 10 broken samples')
+    body = page.inner_text('main')
+    check('uslm-meta-senate.xsd' in body and 'processing instructions removed' in body, 'run notes show the skipped import and the SaxonJS retry')
+    page.screenshot(path=f'{SHOTS}/3-validation.png', full_page=True)
+
+    # Construct list and rollCall.
+    page.get_by_role('link', name='Constructs').first.click()
+    page.get_by_label('Find a construct by name').fill('rollCall')
+    page.get_by_role('link', name='rollCall', exact=True).first.click()
+    expect(page.get_by_role('heading', name='<rollCall>')).to_be_visible(timeout=30000)
+    expect(page.get_by_text('New in 2.2.0-rc1')).to_be_visible(timeout=60000)
+    body = page.inner_text('main')
+    check('lines 9378–9413' in body, 'rollCall source shows lines 9378–9413')
+    check('floorActions' in body and 'legislativeDay' in body, 'rollCall lists floorActions and legislativeDay as parents')
+    check('extends BaseBlockType' in body and 'rollCallMeta' in body, 'rollCall content model shows the extension and rollCallMeta')
+    check('D1' in body, 'rollCall links decision D1')
+    page.screenshot(path=f'{SHOTS}/4-construct.png', full_page=True)
+
+    # A changed construct.
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/constructs/element/citableAsShortTitle')
+    expect(page.get_by_text('Defined differently in 2.1.0')).to_be_visible(timeout=60000)
+    check(True, 'citableAsShortTitle shows as changed since 2.1.0')
+    context.close()
+
+    # Invited user: no import.
+    context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+    page = context.new_page()
+    sign_in(page, 'member@test.example')
+    expect(page.get_by_role('heading', name='USLM 2.2.0-rc1')).to_be_visible(timeout=30000)
+    check(not page.locator('#nav-import').is_visible(), 'user does not see Import package')
+    page.goto(SITE + '/#/import')
+    expect(page.get_by_text('Only admins can import release packages.')).to_be_visible()
+    check(True, 'user is refused the import page')
+    context.close()
+
+    # Uninvited address.
+    context = browser.new_context(viewport={'width': 390, 'height': 844})
+    page = context.new_page()
+    sign_in(page, 'stranger@test.example')
+    expect(page.get_by_role('heading', name='No Access Yet')).to_be_visible(timeout=30000)
+    check(not page.locator('#site-nav').is_visible(), 'uninvited person sees no navigation')
+    page.screenshot(path=f'{SHOTS}/5-not-invited-phone.png', full_page=True)
+    context.close()
+    browser.close()
+
+    relevant = [error for error in console_errors if 'check' not in error]  # role checks read objects that never exist, by design
+    print('console errors:', relevant[:10])
+    check(len(relevant) == 0, 'no console errors for the admin session')
+
+print(f'\n{len(failures)} failures')
+sys.exit(1 if failures else 0)

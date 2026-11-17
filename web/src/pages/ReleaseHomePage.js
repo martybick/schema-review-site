@@ -1,0 +1,282 @@
+/**
+ * @file ReleaseHomePage.js
+ * @copyright Xcential Corporation
+ */
+
+// ----------------------------------------------------------------------------
+// Imports & dependencies
+// ----------------------------------------------------------------------------
+
+import { escapeHTML, formatDate, formatNumber } from '../html.js';
+import { getConstructLink, getReleaseLink, groupSamples, loadSchemaIndex } from './shared.js';
+
+// ----------------------------------------------------------------------------
+// ReleaseHomePage
+// ----------------------------------------------------------------------------
+
+// NOTE: the landing page of one release: what it is, how its samples fare,
+// whether it breaks the release it builds on, what changed, which decisions
+// await ratification, and the package's files.
+export class ReleaseHomePage {
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Static variables
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  static STATUS_LABELS = {
+    'release-candidate': 'Release candidate',
+    reference: 'Reference release',
+    draft: 'Draft',
+    frozen: 'Frozen',
+    superseded: 'Superseded'
+  };
+
+  static KIND_LABELS = {
+    element: 'Elements',
+    complexType: 'Complex types',
+    simpleType: 'Simple types',
+    group: 'Groups',
+    attributeGroup: 'Attribute groups'
+  };
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Constructor
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  constructor (
+    store,
+    packageEntry
+  ) {
+    this.store = store;
+    this.packageEntry = packageEntry;
+    this.manifest = packageEntry.manifest;
+  }
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Instance internal methods
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  #renderFigures () {
+    const byRole = this.manifest.validation?.byRole ?? {};
+    const figures = Object.entries(byRole).map(([role, summary], i) => `
+      <div class="figure${i === 0 ? ' figure--navy' : ''}">
+        <p class="eyebrow">${escapeHTML(role)} samples valid</p>
+        <p class="figure__value">${formatNumber(summary.schemaValid)}<span class="figure__unit"> of ${formatNumber(summary.samples)}</span></p>
+      </div>`);
+    const ruleErrors = Object.values(byRole).reduce((total, summary) => total + summary.ruleErrors, 0);
+    const samplesWithErrors = Object.values(byRole).reduce((total, summary) => total + summary.samplesWithRuleErrors, 0);
+    if (Object.keys(byRole).length > 0) {
+      figures.push(`
+        <div class="figure">
+          <p class="eyebrow">Schematron errors</p>
+          <p class="figure__value">${formatNumber(ruleErrors)}<span class="figure__unit"> in ${formatNumber(samplesWithErrors)} samples</span></p>
+        </div>`);
+    }
+    figures.push(`
+      <div class="figure">
+        <p class="eyebrow">Schemas</p>
+        <p class="figure__value">${formatNumber(this.manifest.contents?.schemas)}<span class="figure__unit"> files</span></p>
+      </div>`);
+    return `<section class="figures" aria-label="Key figures">${figures.join('')}</section>`;
+  }
+
+  #renderCompatibility () {
+    const compatibility = this.manifest.validation?.compatibility;
+    if (!compatibility || compatibility.broken.length === 0) {
+      return compatibility
+        ? `<section class="panel"><p><strong>Backward compatible with ${escapeHTML(compatibility.against)}:</strong> all ${formatNumber(compatibility.validBefore)} samples valid under ${escapeHTML(compatibility.against)} are still valid.</p></section>`
+        : '';
+    }
+    return `
+      <section class="callout" aria-label="Compatibility">
+        <div class="callout__text">
+          <p class="eyebrow">Not backward compatible with ${escapeHTML(compatibility.against)}</p>
+          <p><strong>${formatNumber(compatibility.broken.length)} of ${formatNumber(compatibility.validBefore)} samples valid under ${escapeHTML(compatibility.against)} are now invalid.</strong></p>
+        </div>
+        <a class="button" href="${getReleaseLink(this.packageEntry.name, '/validation')}#compatibility">See the samples</a>
+      </section>`;
+  }
+
+  #renderSamples () {
+    const groups = groupSamples(this.manifest.contents?.samples ?? []);
+    if (groups.length === 0) {
+      return '';
+    }
+    const items = groups.map((group) => `<li><span>${escapeHTML(group.label)} <span class="muted small">${escapeHTML(group.role)}</span></span><span>${formatNumber(group.samples.length)}</span></li>`).join('');
+    return `
+      <section class="stack" aria-labelledby="samples-heading">
+        <h3 id="samples-heading">Samples by Document Type</h3>
+        <ul class="list-plain">${items}</ul>
+      </section>`;
+  }
+
+  #renderPackageFiles () {
+    const contents = this.manifest.contents ?? {};
+    const guides = (contents.reviewGuide ?? []).map((entry) => `<li><a data-file="${escapeHTML(entry.path)}">${escapeHTML(entry.path.replace('review-guide/', ''))}</a></li>`).join('');
+    return `
+      <section class="panel stack" aria-labelledby="package-heading">
+        <h3 id="package-heading">Package</h3>
+        <p class="small">${formatNumber(contents.schemas)} schemas · ${formatNumber((contents.rules ?? []).length)} Schematron rule sets · ${formatNumber((contents.stylesheets ?? []).length)} stylesheets · ${formatNumber((contents.samples ?? []).length)} samples · ${formatNumber((contents.converters ?? []).length)} ${(contents.converters ?? []).length === 1 ? 'converter' : 'converters'}</p>
+        <ul class="stack stack--tight" style="list-style: none; margin: 0; padding: 0; font-size: 14px">
+          <li><a data-file="manifest.json">manifest.json</a></li>
+          <li><a data-file="validation/report.md">Validation report</a></li>
+          ${guides}
+        </ul>
+      </section>`;
+  }
+
+  async #fillDecisions (
+    container
+  ) {
+    const target = container.querySelector('#decisions');
+    if (!target) {
+      return;
+    }
+    let decisions;
+    try {
+      decisions = await this.store.readJSON(this.packageEntry.name, 'decisions/decisions.json');
+    } catch (error) {
+      target.innerHTML = '<p class="muted">This package has no decision records.</p>';
+      return;
+    }
+    const proposed = decisions.decisions.filter((decision) => decision.status === 'proposed');
+    const rows = proposed.map((decision) => `
+      <li>
+        <strong style="color: var(--navy); min-width: 40px">${escapeHTML(decision.id)}</strong>
+        <span style="flex: 1 1 320px; font-weight: 600; font-size: 14px">${escapeHTML(decision.title)}</span>
+        <span class="small muted">${escapeHTML(summarizeChoice(decision.modelingChoice))}</span>
+      </li>`).join('');
+    const openIssues = decisions.openIssues.map((issue) => `<li>${escapeHTML(issue.title)}</li>`).join('');
+    target.innerHTML = `
+      <h2 id="decisions-heading">Decisions Awaiting Ratification</h2>
+      ${proposed.length === 0 ? '<p class="muted">None.</p>' : `<ul class="list-rows">${rows}</ul>`}
+      ${openIssues ? `<h3>Still Open</h3><ul class="stack stack--tight" style="margin: 0; padding-left: 20px; font-size: 14px">${openIssues}</ul>` : ''}`;
+  }
+
+  async #fillChanges (
+    container
+  ) {
+    const target = container.querySelector('#changes');
+    const buildsOn = this.manifest.buildsOn;
+    if (!target || !buildsOn) {
+      target?.remove();
+      return;
+    }
+    const earlierPackage = await this.store.findPackageByRelease(this.manifest.project, buildsOn);
+    if (earlierPackage === null) {
+      target.innerHTML = `<h2>Changes Since ${escapeHTML(buildsOn)}</h2><p class="muted">Release ${escapeHTML(buildsOn)} has not been imported, so changes cannot be listed.</p>`;
+      return;
+    }
+    const [currentIndex, earlierIndex] = await Promise.all([
+      loadSchemaIndex(this.store, this.packageEntry),
+      loadSchemaIndex(this.store, earlierPackage)
+    ]);
+    const comparison = currentIndex.compareWith(earlierIndex);
+    const rows = Object.entries(comparison)
+      .filter(([, change]) => change.added.length + change.changed.length + change.removed.length > 0)
+      .map(([kind, change]) => `
+        <tr>
+          <th scope="row">${escapeHTML(ReleaseHomePage.KIND_LABELS[kind] ?? kind)}</th>
+          <td class="num">${formatNumber(change.added.length)}</td>
+          <td class="num">${formatNumber(change.changed.length)}</td>
+          <td class="num">${formatNumber(change.removed.length)}</td>
+        </tr>`).join('');
+    const addedElements = comparison.element.added.slice(0, 24)
+      .map((name) => `<a class="mono" href="${getConstructLink(this.packageEntry.name, 'element', name)}">${escapeHTML(name)}</a>`).join(', ');
+    target.innerHTML = `
+      <h2 id="changes-heading">Changes Since ${escapeHTML(buildsOn)}</h2>
+      <div class="table-box">
+        <table>
+          <thead><tr><th scope="col">Construct kind</th><th scope="col" class="num">New</th><th scope="col" class="num">Changed</th><th scope="col" class="num">Removed</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="4">No differences.</td></tr>'}</tbody>
+        </table>
+      </div>
+      ${addedElements ? `<p class="eyebrow">New elements</p><p style="font-size: 14px; line-height: 24px">${addedElements}${comparison.element.added.length > 24 ? ` and ${formatNumber(comparison.element.added.length - 24)} more` : ''}</p>` : ''}
+      <p class="small muted">"Changed" counts any difference in a definition, documentation included.</p>`;
+  }
+
+  // NOTE: package files open from Storage download links, fetched once the
+  // page is drawn; until then the links are inert.
+  async #resolveFileLinks (
+    container
+  ) {
+    for (const link of container.querySelectorAll('a[data-file]')) {
+      try {
+        link.href = await this.store.getFileURL(this.packageEntry.name, link.dataset.file);
+        link.target = '_blank';
+        link.rel = 'noopener';
+      } catch (error) {
+        link.replaceWith(document.createTextNode(`${link.textContent} (not available)`));
+      }
+    }
+  }
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Instance properties & methods
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  async render (
+    container
+  ) {
+    const manifest = this.manifest;
+    const source = manifest.source ?? {};
+    container.innerHTML = `
+      <section class="title-row">
+        <div class="stack stack--tight">
+          <p class="eyebrow">${escapeHTML(ReleaseHomePage.STATUS_LABELS[manifest.status] ?? manifest.status)}</p>
+          <h1>${escapeHTML(String(manifest.project ?? '').toUpperCase())} ${escapeHTML(manifest.release)}</h1>
+          <p style="max-width: 760px">${escapeHTML(endSentence(manifest.description))}${manifest.buildsOn ? ` Builds on ${escapeHTML(manifest.buildsOn)}.` : ''}</p>
+          <p class="small muted">Imported from ${escapeHTML(source.repository)} at commit ${escapeHTML(String(source.commit ?? '').slice(0, 7))} · package built ${escapeHTML(formatDate(manifest.created))}</p>
+        </div>
+        <div class="row" style="gap: 12px">
+          <a class="button button--secondary" href="${getReleaseLink(this.packageEntry.name, '/constructs')}">Browse constructs</a>
+          <a class="button" href="${getReleaseLink(this.packageEntry.name, '/validation')}">Validation results</a>
+        </div>
+      </section>
+      ${this.#renderFigures()}
+      ${this.#renderCompatibility()}
+      <div class="row">
+        <div class="row__main">
+          <section class="stack" id="changes" aria-labelledby="changes-heading"><p class="muted" role="status">Comparing with ${escapeHTML(manifest.buildsOn ?? '')}…</p></section>
+          <section class="stack" id="decisions" aria-labelledby="decisions-heading"><p class="muted" role="status">Loading decisions…</p></section>
+        </div>
+        <aside class="row__side">
+          ${this.#renderSamples()}
+          ${this.#renderPackageFiles()}
+        </aside>
+      </div>`;
+    await Promise.all([
+      this.#fillDecisions(container),
+      this.#resolveFileLinks(container),
+      this.#fillChanges(container).catch((error) => {
+        const target = container.querySelector('#changes');
+        if (target) {
+          target.innerHTML = `<p class="message message--error" role="alert">Could not compare releases: ${escapeHTML(error.message)}</p>`;
+        }
+      })
+    ]);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Functions
+// ----------------------------------------------------------------------------
+
+// NOTE: the register's choice reads "Decided 2026-11-16: B, a new element.
+// Drafted as..."; the list shows only the part before the first full stop.
+function summarizeChoice (
+  modelingChoice
+) {
+  if (!modelingChoice) {
+    return '';
+  }
+  const text = modelingChoice.replace(/^Decided\s+\S+:\s*/, '');
+  const firstSentence = text.split(/\.\s/)[0];
+  return `Modeling choice: ${firstSentence.replace(/\.$/, '')}`;
+}
+
+function endSentence (
+  text
+) {
+  const trimmed = String(text ?? '').trim();
+  return trimmed === '' || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
