@@ -56,9 +56,12 @@ export class Router {
     return this;
   }
 
+  // NOTE: pages live in the address's # part, so a section of a page is
+  // written after a second #: "#/releases/x/validation#compatibility".
+  // The route carries it as `section`, for the page to scroll to.
   getCurrentRoute () {
-    const pathText = window.location.hash.replace(/^#/, '').split('?')[0];
-    return this.#matchRoute(pathText);
+    const [pathText, section = null] = window.location.hash.replace(/^#/, '').split('?')[0].split('#');
+    return { ...this.#matchRoute(pathText), section };
   }
 
   start (

@@ -275,6 +275,8 @@ class SiteApp {
     }
     if (renderNumber === this.renderCount) {
       this.container.focus({ preventScroll: true });
+      const target = route.section ? document.getElementById(route.section) : null;
+      target?.scrollIntoView({ block: 'start' });
     }
   }
 

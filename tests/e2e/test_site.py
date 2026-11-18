@@ -94,6 +94,9 @@ with sync_playwright() as playwright:
     expect(page.get_by_role('heading', name='Validation and Coverage')).to_be_visible(timeout=30000)
     totals = [int(text.replace(',', '')) for text in page.locator('#rule-errors .list-rows > li > span:first-child').all_inner_texts()]
     print('rule error groups:', totals)
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/validation#compatibility')
+    expect(page.locator('#compatibility')).to_be_in_viewport(timeout=30000)
+    check(True, 'an address with a section (validation#compatibility) opens the page at that section')
     page.locator('a[data-jump="rule-errors"]').first.click()
     page.wait_for_timeout(800)
     check('#/' in page.url and page.locator('#rule-errors').is_visible(), 'the rule error count jumps to the Rule Errors section and stays on the page')
