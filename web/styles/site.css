@@ -148,6 +148,14 @@ input, select, textarea { font: inherit; font-size: 14px; font-weight: 400; padd
 .pill--support { background: var(--blue-200); color: var(--navy); }
 .pill--oppose { background: var(--amber); color: var(--navy); }
 .message--success { background: var(--blue-200); color: var(--navy); }
+.diff pre { white-space: pre; }
+.diff-line { display: block; }
+.diff-line--added { background: rgba(156, 196, 247, 0.22); }
+.diff-line--removed { background: rgba(242, 169, 59, 0.38); }
+.diff-mark { display: inline-block; width: 20px; color: var(--blue-200); user-select: none; }
+.diff-skip { display: block; color: var(--blue-200); font-style: italic; padding: 2px 0; user-select: none; }
+details.change { border: 1px solid var(--surface-300); border-radius: var(--radius-md); padding: 10px 16px; }
+details.change > summary { cursor: pointer; font-size: 14px; }
 .progress { height: 12px; border-radius: 9999px; background: var(--surface-200); overflow: hidden; }
 .progress > div { height: 12px; background: var(--navy); }
 

@@ -221,7 +221,7 @@ export class ReleaseHomePage {
         </table>
       </div>
       ${addedElements ? `<p class="eyebrow">New elements</p><p style="font-size: 14px; line-height: 24px">${addedElements}${comparison.element.added.length > 24 ? ` and ${formatNumber(comparison.element.added.length - 24)} more` : ''}</p>` : ''}
-      <p class="small muted">"Changed" counts any difference in a definition, documentation included.</p>`;
+      <p class="small muted">"Changed" counts any difference in a definition, documentation included. <a href="${getReleaseLink(this.packageEntry.name, '/changes')}">See every change, line by line</a>, or compare with another release.</p>`;
   }
 
   // NOTE: package files open from Storage download links, fetched once the
@@ -258,6 +258,7 @@ export class ReleaseHomePage {
           <p class="small muted">Imported from ${escapeHTML(source.repository)} at commit ${escapeHTML(String(source.commit ?? '').slice(0, 7))} · package built ${escapeHTML(formatDate(manifest.created))}</p>
         </div>
         <div class="row" style="gap: 12px">
+          ${this.manifest.buildsOn ? `<a class="button button--secondary" href="${getReleaseLink(this.packageEntry.name, '/changes')}">What changed</a>` : ''}
           <a class="button button--secondary" href="${getReleaseLink(this.packageEntry.name, '/constructs')}">Browse constructs</a>
           <a class="button" href="${getReleaseLink(this.packageEntry.name, '/validation')}">Validation results</a>
         </div>

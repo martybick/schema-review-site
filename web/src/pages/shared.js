@@ -67,6 +67,9 @@ export async function loadDecisions (
   store,
   packageEntry
 ) {
+  if (!packageEntry.manifest.files.some((file) => file.path === 'decisions/decisions.json')) {
+    return null;
+  }
   try {
     return await store.readJSON(packageEntry.name, 'decisions/decisions.json');
   } catch (error) {

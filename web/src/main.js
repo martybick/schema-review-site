@@ -11,6 +11,7 @@ import { AuthController } from './AuthController.js';
 import { DataStore } from './DataStore.js';
 import { escapeHTML } from './html.js';
 import { PackageStore } from './PackageStore.js';
+import { ChangesPage } from './pages/ChangesPage.js';
 import { ConstructListPage, ConstructPage } from './pages/ConstructPage.js';
 import { DecisionListPage, DecisionPage } from './pages/DecisionPage.js';
 import { ImportPage } from './pages/ImportPage.js';
@@ -50,6 +51,8 @@ class SiteApp {
       .addRoute('release-validation', 'releases/:packageName/validation')
       .addRoute('release-constructs', 'releases/:packageName/constructs')
       .addRoute('construct', 'releases/:packageName/constructs/:kind/:name')
+      .addRoute('release-changes', 'releases/:packageName/changes')
+      .addRoute('release-changes-against', 'releases/:packageName/changes/:against')
       .addRoute('release-decisions', 'releases/:packageName/decisions')
       .addRoute('decision', 'releases/:packageName/decisions/:decisionID');
     this.renderCount = 0;
@@ -71,6 +74,8 @@ class SiteApp {
     const section = {
       home: 'releases',
       release: 'releases',
+      'release-changes': 'releases',
+      'release-changes-against': 'releases',
       constructs: 'constructs',
       'release-constructs': 'constructs',
       construct: 'constructs',
@@ -169,6 +174,8 @@ class SiteApp {
       constructs: () => new ConstructListPage(this.store, packageEntry),
       'release-constructs': () => new ConstructListPage(this.store, packageEntry),
       construct: () => new ConstructPage(this.store, this.dataStore, this.authController, packageEntry, route.params.kind, route.params.name),
+      'release-changes': () => new ChangesPage(this.store, packageEntry),
+      'release-changes-against': () => new ChangesPage(this.store, packageEntry, route.params.against),
       decisions: () => new DecisionListPage(this.store, this.dataStore, packageEntry),
       'release-decisions': () => new DecisionListPage(this.store, this.dataStore, packageEntry),
       decision: () => new DecisionPage(this.store, this.dataStore, this.authController, packageEntry, route.params.decisionID)

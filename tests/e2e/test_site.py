@@ -120,6 +120,22 @@ with sync_playwright() as playwright:
     page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/constructs/element/citableAsShortTitle')
     expect(page.get_by_text('Defined differently in 2.1.0')).to_be_visible(timeout=60000)
     check(True, 'citableAsShortTitle shows as changed since 2.1.0')
+    expect(page.get_by_role('heading', name='What Changed Since 2.1.0')).to_be_visible(timeout=30000)
+    check(page.locator('#construct-diff .diff-line--added').count() + page.locator('#construct-diff .diff-line--removed').count() > 0, 'a changed construct shows its line diff')
+
+    # What changed, line by line.
+    page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/changes')
+    expect(page.get_by_role('heading', name='What Changed in 2.2.0-rc1')).to_be_visible(timeout=60000)
+    body = page.inner_text('main').lower()
+    check('changed (24)' in body and 'new (77)' in body, 'changes page lists 77 new and 24 changed elements')
+    first = page.locator('details.change').first
+    first.locator('summary').click()
+    expect(first.locator('.diff')).to_be_visible(timeout=15000)
+    check(first.locator('.diff-line--added, .diff-line--removed').count() > 0, 'opening a changed construct shows its diff')
+    check(page.locator('details.change .change-label', has_text='documentation only').count() + page.locator('details.change .change-label', has_text='definition changed').count() == page.locator('details.change').count(), 'each change says whether only documentation changed')
+    expect(page.get_by_role('heading', name='Package Files')).to_be_visible()
+    check(page.locator('#files-heading ~ div h3', has_text='Samples').count() == 1, 'changes page shows package file differences')
+    page.screenshot(path=f'{SHOTS}/9-changes.png', full_page=False)
 
     # Slice 2 as admin: a comment, a position, and inviting someone.
     page.goto(SITE + '/#/releases/uslm-2.2.0-rc1/constructs/element/rollCall')

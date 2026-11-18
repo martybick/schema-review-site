@@ -8,6 +8,7 @@
 // ----------------------------------------------------------------------------
 
 import { CommentThread } from '../CommentThread.js';
+import { isDocumentationOnly, renderDiff } from '../diff.js';
 import { escapeHTML, formatNumber } from '../html.js';
 import { getConstructLink, getDecisionLink, getReleaseLink, loadSchemaIndex, summarizeChoice } from './shared.js';
 
@@ -121,8 +122,13 @@ export class ConstructPage {
       ? `<span class="pill pill--navy">New in ${escapeHTML(this.packageEntry.manifest.release)}</span> Not in ${escapeHTML(buildsOn)}.`
       : earlier.canonical === construct.canonical
         ? `Unchanged since ${escapeHTML(buildsOn)}.`
-        : `<span class="pill">Changed</span> Defined differently in ${escapeHTML(buildsOn)}: <a href="${getConstructLink(earlierPackage.name, this.kind, this.name)}">see the ${escapeHTML(buildsOn)} definition</a>.`;
+        : `<span class="pill">Changed</span> ${isDocumentationOnly(earlier, construct) ? 'Only its documentation differs from' : 'Defined differently in'} ${escapeHTML(buildsOn)}: <a href="${getConstructLink(earlierPackage.name, this.kind, this.name)}">see the ${escapeHTML(buildsOn)} definition</a>.`;
     target.innerHTML = `<h3>History</h3><p style="font-size: 14px; line-height: 22px">${status}</p>`;
+    if (earlier !== null && earlier.canonical !== construct.canonical) {
+      const diffBox = this.container.querySelector('#construct-diff');
+      diffBox.hidden = false;
+      diffBox.innerHTML = `<h2>What Changed Since ${escapeHTML(buildsOn)}</h2><p class="small muted">Left line numbers: ${escapeHTML(buildsOn)} · right: ${escapeHTML(this.packageEntry.manifest.release)}</p>${renderDiff(earlier, construct)}`;
+    }
   }
 
   async #fillDecisions (
@@ -158,6 +164,7 @@ export class ConstructPage {
   async render (
     container
   ) {
+    this.container = container;
     container.innerHTML = '<p class="muted" role="status">Reading the schema…</p>';
     const schemaIndex = await loadSchemaIndex(this.store, this.packageEntry);
     const construct = schemaIndex.getConstruct(this.kind, this.name);
@@ -189,6 +196,7 @@ export class ConstructPage {
             <p class="eyebrow">Referred to by</p>
             ${this.#renderParents(construct)}
           </section>
+          <section class="stack" id="construct-diff" hidden></section>
           <section class="stack" aria-labelledby="source-heading">
             <h2 id="source-heading">XSD Source</h2>
             ${this.#renderSource(construct)}
