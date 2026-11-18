@@ -28,6 +28,19 @@ def check(condition, label):
         failures.append(label)
 
 
+AXE = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'node_modules', 'axe-core', 'axe.min.js')).read()
+
+
+def check_accessibility(page, name):
+    """Runs axe-core's WCAG 2.0, 2.1 and 2.2 A and AA rules on the page as it stands."""
+    page.add_script_tag(content=AXE)
+    violations = page.evaluate("""async () => {
+      const result = await axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } });
+      return result.violations.map((v) => `${v.id} (${v.nodes.length}): ${v.nodes[0].target.join(' ')}`);
+    }""")
+    check(len(violations) == 0, f'accessibility (WCAG 2.2 AA, axe-core): {name} {violations[:3] if violations else ""}')
+
+
 def sign_in(page, email, start='/'):
     page.goto(SITE + start)
     page.get_by_label('Email address').fill(email)
@@ -407,6 +420,38 @@ with sync_playwright() as playwright:
     }""")
     check(refused == 'permission-denied', f'an uninvited person cannot read comments: {refused}')
     stranger.context.close()
+
+    # Accessibility: every kind of page, as an admin sees it (the most controls).
+    context = browser.new_context(viewport={'width': 1440, 'height': 1000})
+    page = context.new_page()
+    page.goto(SITE + '/')
+    expect(page.get_by_role('button', name='Email me a sign-in link')).to_be_visible(timeout=20000)
+    check_accessibility(page, 'sign-in page')
+    sign_in(page, 'admin@test.example')
+    page.wait_for_timeout(3000)
+    for name, address, ready in [
+        ('release home', '/#/releases/uslm-2.2.0-rc1', 'Releases on This Site'),
+        ('what changed', '/#/releases/uslm-2.2.0-rc1/changes', 'At a Glance'),
+        ('validation', '/#/releases/uslm-2.2.0-rc1/validation', 'Results by Document Type'),
+        ('construct list', '/#/releases/uslm-2.2.0-rc1/constructs', None),
+        ('construct', '/#/releases/uslm-2.2.0-rc1/constructs/element/rollCall', 'Add a Comment'),
+        ('decision list', '/#/releases/uslm-2.2.0-rc1/decisions', 'Decisions'),
+        ('decision', '/#/releases/uslm-2.2.0-rc1/decisions/D1', 'Positions'),
+        ('site-raised decision', '/#/releases/uslm-2.2.0-rc1/decisions/WG1', 'Background'),
+        ('history', '/#/history', 'Release History'),
+        ('help', '/#/help', 'For Admins'),
+        ('people', '/#/people', 'Invite Someone'),
+        ('import', '/#/import', 'Import a Release Package')
+    ]:
+        page.goto(SITE + address)
+        if ready:
+            expect(page.get_by_role('heading', name=ready, exact=True).first).to_be_visible(timeout=60000)
+        page.wait_for_timeout(1500)
+        if name == 'what changed':
+            page.locator('details.change summary').first.click()
+            page.wait_for_timeout(500)
+        check_accessibility(page, name)
+    context.close()
 
     # Uninvited address.
     context = browser.new_context(viewport={'width': 390, 'height': 844})

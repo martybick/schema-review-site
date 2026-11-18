@@ -62,8 +62,12 @@ Open http://127.0.0.1:5000. Sign-in links appear in the Auth emulator at http://
 
 ## End-to-end test
 
-`tests/e2e/test_site.py` signs in as an admin, imports packages, and checks every slice 1 page, then
-checks a user and an uninvited address. It needs the emulators running, a `config/members.json` with
+`tests/e2e/test_site.py` signs in as an admin, imports packages, and checks every page and feature:
+releases, What changed, validation, constructs, comments, decisions and positions, People, release
+settings, History and Help, then a member, someone added on the People page, and an uninvited
+address, including what the database rules refuse. It ends by checking every kind of page against
+WCAG 2.2 AA with axe-core (`npm install` provides it); a new contrast, label or heading problem fails
+the test. It needs the emulators running, a `config/members.json` with
 `admin@test.example` as admin and `member@test.example` as user (then `npm run rules`), Python
 Playwright with Chrome, and the 2.1.0 and 2.2.0-rc1 packages unzipped under one folder:
 
