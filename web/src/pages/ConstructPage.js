@@ -152,7 +152,7 @@ export class ConstructPage {
       <li class="panel--navy" style="border-radius: var(--radius-md); padding: 16px; list-style: none">
         <p class="eyebrow">${escapeHTML(decision.id)}</p>
         <p style="font-weight: 600"><a style="color: #ffffff" href="${getDecisionLink(this.packageEntry.name, decision.id)}">${escapeHTML(decision.title)}</a></p>
-        ${decision.modelingChoice ? `<p class="small" style="color: var(--blue-200)">Proposed: ${escapeHTML(summarizeChoice(decision.modelingChoice))}.</p>` : ''}
+        ${decision.modelingChoice ? `<p class="small" style="color: var(--on-grey)">Proposed: ${escapeHTML(summarizeChoice(decision.modelingChoice))}.</p>` : ''}
       </li>`).join('');
     target.innerHTML = `<h3>Decisions That Name It</h3><ul class="stack" style="margin: 0; padding: 0">${items}</ul>`;
   }

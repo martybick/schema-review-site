@@ -347,7 +347,7 @@ export class DecisionPage {
       form = `
         <form class="form" id="position-form">
           <fieldset style="border: 0; margin: 0; padding: 0">
-            <legend style="font-size: 13px; font-weight: 600; margin-bottom: 6px">${mine ? 'Change your position' : 'Your position'}</legend>
+            <legend style="font-size: 14px; font-weight: 600; margin-bottom: 6px">${mine ? 'Change your position' : 'Your position'}</legend>
             <div class="radio-row">
               ${Object.entries(DataStore.POSITIONS).map(([value, label]) => `<label><input type="radio" name="position" value="${value}"${mine?.position === value ? ' checked' : ''} required> ${label}</label>`).join('')}
             </div>
@@ -388,7 +388,7 @@ export class DecisionPage {
         <p class="small muted">Admins only. Record what the working group agreed, usually after a meeting.</p>
         <form class="form" id="record-form">
           <fieldset style="border: 0; margin: 0; padding: 0">
-            <legend style="font-size: 13px; font-weight: 600; margin-bottom: 6px">Outcome</legend>
+            <legend style="font-size: 14px; font-weight: 600; margin-bottom: 6px">Outcome</legend>
             <div class="radio-row" style="flex-direction: column; gap: 8px">
               ${Object.entries(statuses).map(([value, label], index) => `<label><input type="radio" name="status" value="${value}"${index === 0 ? ' checked' : ''}> ${escapeHTML(label)}</label>`).join('')}
             </div>

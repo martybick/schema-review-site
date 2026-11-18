@@ -152,7 +152,7 @@ export class ReleaseHomePage {
     const isDefault = controls.isDefault(name);
     const isHidden = controls.isHidden(name);
     return `
-      <section class="panel stack" id="release-settings" aria-labelledby="release-settings-heading" style="border: 2px solid var(--amber)">
+      <section class="panel stack" id="release-settings" aria-labelledby="release-settings-heading" style="border: 2px solid var(--pink)">
         <h3 id="release-settings-heading">Release Settings (Admins)</h3>
         <p class="small">${isDefault ? 'The site opens on this release.' : 'The site does not open on this release.'} ${isHidden ? '<strong>Hidden from members:</strong> only admins see it.' : 'Members can see it.'}</p>
         <div class="stack stack--tight">
@@ -223,7 +223,7 @@ export class ReleaseHomePage {
       const key = DataStore.getDecisionKey(project, decision.id);
       return `
         <li>
-          <strong style="color: var(--navy); min-width: 40px">${escapeHTML(decision.id)}</strong>
+          <strong style="color: var(--heading); min-width: 40px">${escapeHTML(decision.id)}</strong>
           <span style="flex: 1 1 320px; font-size: 14px"><a style="font-weight: 600" href="${getDecisionLink(this.packageEntry.name, decision.id)}">${escapeHTML(decision.title)}</a><br><span class="small muted">Proposed: ${escapeHTML(summarizeChoice(decision.modelingChoice))}</span></span>
           ${renderStatusPill(records.get(key))}
           ${renderTally(countPositions(positions.filter((entry) => entry.decisionKey === key)))}
@@ -307,7 +307,7 @@ export class ReleaseHomePage {
     container.innerHTML = `
       <section class="title-row">
         <div class="stack stack--tight">
-          <p class="eyebrow">${escapeHTML(ReleaseHomePage.STATUS_LABELS[manifest.status] ?? manifest.status)}${this.siteControls?.isAdmin && this.store.isHidden(this.packageEntry.name) ? ' · <span style="color: var(--navy); background: var(--amber); padding: 0 6px; border-radius: 4px">Hidden from members</span>' : ''}</p>
+          <p class="eyebrow">${escapeHTML(ReleaseHomePage.STATUS_LABELS[manifest.status] ?? manifest.status)}${this.siteControls?.isAdmin && this.store.isHidden(this.packageEntry.name) ? ' · <span style="background: var(--amber); color: var(--ink); padding: 0 6px; border-radius: 4px">Hidden from members</span>' : ''}</p>
           <h1>${escapeHTML(String(manifest.project ?? '').toUpperCase())} ${escapeHTML(manifest.release)}</h1>
           <p style="max-width: 760px">${escapeHTML(endSentence(manifest.description))}${manifest.buildsOn ? ` Builds on ${escapeHTML(manifest.buildsOn)}.` : ''}</p>
           <p class="small muted">Imported from ${escapeHTML(source.repository)} at commit ${escapeHTML(String(source.commit ?? '').slice(0, 7))} · package built ${escapeHTML(formatDate(manifest.created))}</p>

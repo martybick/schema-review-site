@@ -139,7 +139,7 @@ export class ValidationPage {
       const more = group.samples.size > ValidationPage.MAX_EXAMPLES ? ` and ${formatNumber(group.samples.size - ValidationPage.MAX_EXAMPLES)} more` : '';
       return `
         <li>
-          <span style="font-size: 24px; font-weight: 700; color: var(--navy); min-width: 64px">${formatNumber(group.count)}</span>
+          <span style="font-size: 24px; font-weight: 700; color: var(--heading); min-width: 64px">${formatNumber(group.count)}</span>
           <div class="stack stack--tight" style="flex: 1 1 400px">
             <p style="font-size: 14px; line-height: 22px; font-weight: 600">${escapeHTML(group.example)}</p>
             <p class="small muted">${escapeHTML(group.ruleID)} · ${formatNumber(group.samples.size)} samples: ${escapeHTML(examples)}${more}</p>
@@ -200,7 +200,7 @@ export class ValidationPage {
       <section class="stack" aria-labelledby="notes-heading">
         <h3 id="notes-heading">Run Notes</h3>
         <p class="small">${escapeHTML(report.validator)}</p>
-        ${notes.length > 0 ? `<ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 20px">${notes.map((note) => `<li>${note}</li>`).join('')}</ul>` : ''}
+        ${notes.length > 0 ? `<ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 21px">${notes.map((note) => `<li>${note}</li>`).join('')}</ul>` : ''}
       </section>`;
   }
 

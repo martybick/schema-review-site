@@ -56,7 +56,7 @@ export class HistoryPage {
   // band, chroma, colour-blind separation and 3:1 contrast all pass.
   static PUBLISHERS = {
     GPO: { label: 'GPO release', color: '#1d64bf' },
-    Xcential: { label: 'Xcential proposal', color: '#c97a10' }
+    Xcential: { label: 'Xcential proposal', color: '#d63f7a' }
   };
 
   static LAYOUT = {
@@ -66,7 +66,7 @@ export class HistoryPage {
     right: 48,
     top: 28,
     bottom: 44,
-    labelHeight: 18
+    labelHeight: 20
   };
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -152,7 +152,7 @@ export class HistoryPage {
     const inside = (box) => box.x0 >= bounds.x0 && box.x1 <= bounds.x1 && box.y0 >= bounds.y0 && box.y1 <= bounds.y1;
     return points.map((point) => {
       const text = getLabel(point);
-      const width = text.length * 7.2;
+      const width = text.length * 8.2;
       const px = x(point);
       const py = y(point);
       const candidates = [
@@ -241,7 +241,7 @@ export class HistoryPage {
           ${leader}
           <circle cx="${x(point)}" cy="${y(point)}" r="16" class="history-hit"/>
           <circle cx="${x(point)}" cy="${y(point)}" r="6" fill="${color}" stroke="#ffffff" stroke-width="2"/>
-          <text x="${label.box.x0}" y="${label.box.y0 + 13}" class="history-label">${escapeHTML(label.text)}</text>
+          <text x="${label.box.x0}" y="${label.box.y0 + 15}" class="history-label">${escapeHTML(label.text)}</text>
         </g>`;
     }).join('');
     return `
