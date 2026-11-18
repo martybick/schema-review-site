@@ -21,6 +21,12 @@ export class SchemaIndex {
   static KINDS = ['element', 'complexType', 'simpleType', 'group', 'attributeGroup'];
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Private instance properties
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  #childrenMap = null;
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Constructor
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -136,6 +142,67 @@ export class SchemaIndex {
     return [...this.constructs.values()]
       .filter((construct) => kind === null || construct.kind === kind)
       .sort((first, second) => first.name.localeCompare(second.name));
+  }
+
+  // NOTE: every global construct that can occur under the given root
+  // elements: through element, group and attribute group references, type
+  // and base types (complex or simple), and substitution groups.
+  findReachable (
+    rootElementNames
+  ) {
+    const children = this.#getChildren();
+    const reached = new Set();
+    const pending = rootElementNames.map((name) => `element:${name}`).filter((key) => this.constructs.has(key));
+    while (pending.length > 0) {
+      const key = pending.pop();
+      if (reached.has(key)) {
+        continue;
+      }
+      reached.add(key);
+      for (const child of children.get(key) ?? []) {
+        if (!reached.has(child)) {
+          pending.push(child);
+        }
+      }
+    }
+    return reached;
+  }
+
+  #getChildren () {
+    if (this.#childrenMap !== null) {
+      return this.#childrenMap;
+    }
+    const children = new Map();
+    const link = (from, to) => {
+      if (this.constructs.has(to)) {
+        if (!children.has(from)) {
+          children.set(from, new Set());
+        }
+        children.get(from).add(to);
+      }
+    };
+    for (const [key, construct] of this.constructs) {
+      const nodes = [construct.node, ...construct.node.getElementsByTagNameNS(SchemaIndex.XSD_NAMESPACE, '*')];
+      for (const node of nodes) {
+        const ref = node.getAttribute('ref');
+        if (ref && ['element', 'group', 'attributeGroup'].includes(node.localName)) {
+          link(key, `${node.localName}:${stripPrefix(ref)}`);
+        }
+        for (const attributeName of ['type', 'base']) {
+          const typeName = node.getAttribute(attributeName);
+          if (typeName) {
+            link(key, `complexType:${stripPrefix(typeName)}`);
+            link(key, `simpleType:${stripPrefix(typeName)}`);
+          }
+        }
+      }
+      const head = construct.kind === 'element' ? construct.node.getAttribute('substitutionGroup') : null;
+      if (head) {
+        link(`element:${stripPrefix(head)}`, key);
+      }
+    }
+    this.#childrenMap = children;
+    return children;
   }
 
   // NOTE: compares this release with an earlier one, by construct kind.

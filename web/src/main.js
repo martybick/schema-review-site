@@ -13,6 +13,7 @@ import { escapeHTML } from './html.js';
 import { PackageStore } from './PackageStore.js';
 import { ChangesPage } from './pages/ChangesPage.js';
 import { ConstructListPage, ConstructPage } from './pages/ConstructPage.js';
+import { HistoryPage } from './pages/HistoryPage.js';
 import { DecisionListPage, DecisionPage } from './pages/DecisionPage.js';
 import { ImportPage } from './pages/ImportPage.js';
 import { ReleaseHomePage } from './pages/ReleaseHomePage.js';
@@ -46,6 +47,7 @@ class SiteApp {
       .addRoute('validation', 'validation')
       .addRoute('decisions', 'decisions')
       .addRoute('people', 'people')
+      .addRoute('history', 'history')
       .addRoute('import', 'import')
       .addRoute('release', 'releases/:packageName')
       .addRoute('release-validation', 'releases/:packageName/validation')
@@ -72,6 +74,7 @@ class SiteApp {
     nav.hidden = !isMember;
     document.getElementById('nav-import').hidden = !this.authController.isAdmin;
     document.getElementById('nav-people').hidden = !this.authController.isAdmin;
+    document.getElementById('nav-history').hidden = !this.authController.isAdmin;
     const section = {
       home: 'releases',
       release: 'releases',
@@ -86,6 +89,7 @@ class SiteApp {
       'release-decisions': 'decisions',
       decision: 'decisions',
       people: 'people',
+      history: 'history',
       import: 'import'
     }[route.name];
     for (const link of nav.querySelectorAll('a[data-nav]')) {
@@ -195,6 +199,14 @@ class SiteApp {
         return;
       }
       await new ImportPage(this.store, () => this.store.clearCache()).render(this.container);
+      return;
+    }
+    if (route.name === 'history') {
+      if (!this.authController.isAdmin) {
+        renderMessage(this.container, 'Only admins can see the release history.', true);
+        return;
+      }
+      await new HistoryPage(this.store).render(this.container);
       return;
     }
     if (route.name === 'people') {
