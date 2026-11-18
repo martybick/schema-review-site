@@ -14,62 +14,59 @@ import { getReleaseLink, loadSchemaIndex } from './shared.js';
 // Functions
 // ----------------------------------------------------------------------------
 
-// NOTE: "2016-08-30" -> "Aug 2016"; packages built before release dates were
-// recorded have none, and show nothing.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// NOTE: "2016-08-30" -> "Aug 2016".
 function formatMonth (
   isoDate
 ) {
-  if (!isoDate) {
-    return '';
-  }
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months.at(Number(isoDate.slice(5, 7)) - 1)} ${isoDate.slice(0, 4)}`;
+  return isoDate ? `${MONTHS.at(Number(isoDate.slice(5, 7)) - 1)} ${isoDate.slice(0, 4)}` : '';
+}
+
+function toDays (
+  isoDate
+) {
+  return Date.parse(isoDate) / 864e5;
+}
+
+// NOTE: a round step for about five gridlines (1, 2 or 5 times a power of 10).
+function getStep (
+  maximum
+) {
+  const rough = Math.max(1, maximum) / 5;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  return [1, 2, 5, 10].map((factor) => factor * power).find((step) => step >= rough);
 }
 
 // ----------------------------------------------------------------------------
 // HistoryPage
 // ----------------------------------------------------------------------------
 
-// NOTE: admins only. Every imported release in version order, each compared
-// with the release it builds on, as a grid: a column per release and a swim
-// lane per family of document types. A construct counts in the lane of each
-// family whose document roots can reach it; one every family can reach
-// counts once, as shared; one no root reaches counts as a building block.
+// NOTE: admins only. Every imported release placed on a timeline by its
+// release point (when its changes stopped, from the package's `released`),
+// climbing by the elements and types it added, changed or removed against
+// the release it builds on. A release that builds on an older one starts
+// its climb from that release, so a parallel draft shows as a branch.
 export class HistoryPage {
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Static variables
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  static FAMILIES = [
-    { id: 'law', label: 'Bills, laws, Code, regulations', roots: ['bill', 'resolution', 'pLaw', 'uscDoc', 'statute', 'statutesAtLarge', 'statuteCompilation', 'constitutionalAmendment', 'lawDoc', 'cfrDoc', 'frDoc', 'rule', 'notice', 'presidentialDoc'] },
-    { id: 'amendment', label: 'Amendments', roots: ['amendment', 'engrossedAmendment'] },
-    { id: 'report', label: 'Committee reports', roots: ['legislativeReport'] },
-    { id: 'cbo', label: 'CBO cost estimates', roots: ['cboReport'] },
-    { id: 'floor', label: 'Floor proceedings and votes', roots: ['rollCall', 'legislativeDay', 'calendar'] }
-  ];
-
-  static LANES = [
-    { id: 'shared', label: 'Shared by every document type' },
-    ...HistoryPage.FAMILIES,
-    { id: 'other', label: 'Building blocks no document uses' }
-  ];
-
   // NOTE: validated with the dataviz palette checker against white: lightness
   // band, chroma, colour-blind separation and 3:1 contrast all pass.
-  static SERIES = [
-    { id: 'added', label: 'New', color: '#1d64bf' },
-    { id: 'changed', label: 'Changed', color: '#c97a10' },
-    { id: 'removed', label: 'Removed', color: '#7a5ea8' }
-  ];
+  static PUBLISHERS = {
+    GPO: { label: 'GPO release', color: '#1d64bf' },
+    Xcential: { label: 'Xcential proposal', color: '#c97a10' }
+  };
 
   static LAYOUT = {
-    laneLabelWidth: 210,
-    columnWidth: 112,
-    headerHeight: 76,
-    laneHeight: 72,
-    barWidth: 18,
-    barGap: 2,
-    barMaxHeight: 48
+    width: 1120,
+    height: 460,
+    left: 64,
+    right: 48,
+    top: 28,
+    bottom: 44,
+    labelHeight: 18
   };
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -86,150 +83,189 @@ export class HistoryPage {
   // Instance internal methods
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // NOTE: the lanes a construct belongs to in one release.
-  #getLanes (
-    reach,
-    presentFamilies,
-    key
+  #getPublisher (
+    manifest
   ) {
-    const families = presentFamilies.filter((family) => reach.get(family.id).has(key));
-    if (families.length === 0) {
-      return ['other'];
+    if (manifest.publisher && HistoryPage.PUBLISHERS[manifest.publisher]) {
+      return manifest.publisher;
     }
-    if (presentFamilies.length > 1 && families.length === presentFamilies.length) {
-      return ['shared'];
-    }
-    return families.map((family) => family.id);
+    return manifest.status === 'reference' ? 'GPO' : 'Xcential';
   }
 
-  #computeReach (
-    index
+  async #buildPoints (
+    packages
   ) {
-    const reach = new Map();
-    const presentFamilies = [];
-    for (const family of HistoryPage.FAMILIES) {
-      const roots = family.roots.filter((root) => index.getConstruct('element', root) !== null);
-      reach.set(family.id, index.findReachable(roots));
-      if (roots.length > 0) {
-        presentFamilies.push(family);
+    const byRelease = new Map(packages.map((entry) => [entry.manifest.release, entry]));
+    const points = new Map();
+    for (const entry of packages) {
+      const earlier = byRelease.get(entry.manifest.buildsOn) ?? null;
+      let totals = null;
+      if (earlier) {
+        const [current, before] = await Promise.all([loadSchemaIndex(this.store, entry), loadSchemaIndex(this.store, earlier)]);
+        totals = Object.values(current.compareWith(before)).reduce((sum, change) => ({
+          added: sum.added + change.added.length,
+          changed: sum.changed + change.changed.length,
+          removed: sum.removed + change.removed.length
+        }), { added: 0, changed: 0, removed: 0 });
       }
+      const step = totals ? totals.added + totals.changed + totals.removed : 0;
+      const base = earlier ? points.get(earlier.manifest.release)?.running ?? 0 : 0;
+      points.set(entry.manifest.release, {
+        entry,
+        earlier,
+        totals,
+        step,
+        running: base + step,
+        date: entry.manifest.released,
+        publisher: this.#getPublisher(entry.manifest)
+      });
     }
-    return { reach, presentFamilies };
+    return [...points.values()];
   }
 
-  async #compareRelease (
-    entry,
-    earlierEntry
+  // NOTE: places each label beside its point where it hits no other label,
+  // point or the plot's edge, trying the nearest spots first.
+  #placeLabels (
+    points,
+    x,
+    y,
+    bounds
   ) {
-    const [current, earlier] = await Promise.all([
-      loadSchemaIndex(this.store, entry),
-      loadSchemaIndex(this.store, earlierEntry)
-    ]);
-    const currentReach = this.#computeReach(current);
-    const earlierReach = this.#computeReach(earlier);
-    const cells = new Map(HistoryPage.LANES.map((lane) => [lane.id, { added: 0, changed: 0, removed: 0 }]));
-    const comparison = current.compareWith(earlier);
-    for (const [kind, change] of Object.entries(comparison)) {
-      for (const series of ['added', 'changed']) {
-        for (const name of change[series]) {
-          for (const lane of this.#getLanes(currentReach.reach, currentReach.presentFamilies, `${kind}:${name}`)) {
-            cells.get(lane)[series] += 1;
-          }
+    const layout = HistoryPage.LAYOUT;
+    const placed = [];
+    const markers = points.map((point) => ({ x0: x(point) - 8, x1: x(point) + 8, y0: y(point) - 8, y1: y(point) + 8 }));
+    // NOTE: the lines are sampled every 4 units, close enough to keep a
+    // label off them.
+    const linePoints = points.filter((point) => point.earlier).flatMap((point) => {
+      const from = points.find((other) => other.entry === point.earlier);
+      if (!from) {
+        return [];
+      }
+      const length = Math.hypot(x(point) - x(from), y(point) - y(from));
+      const count = Math.max(1, Math.ceil(length / 4));
+      return Array.from({ length: count + 1 }, (_, i) => [x(from) + (x(point) - x(from)) * i / count, y(from) + (y(point) - y(from)) * i / count]);
+    });
+    const overlaps = (box) => [...placed, ...markers].some((other) => box.x0 < other.x1 && box.x1 > other.x0 && box.y0 < other.y1 && box.y1 > other.y0) ||
+      linePoints.some(([px, py]) => px > box.x0 - 2 && px < box.x1 + 2 && py > box.y0 - 2 && py < box.y1 + 2);
+    const inside = (box) => box.x0 >= bounds.x0 && box.x1 <= bounds.x1 && box.y0 >= bounds.y0 && box.y1 <= bounds.y1;
+    return points.map((point) => {
+      const text = `${point.entry.manifest.release}${point.step ? `  +${formatNumber(point.step)}` : ''}`;
+      const width = text.length * 7.2;
+      const px = x(point);
+      const py = y(point);
+      const candidates = [
+        [12, -layout.labelHeight / 2], [-12 - width, -layout.labelHeight / 2],
+        [-width / 2, -12 - layout.labelHeight], [-width / 2, 12],
+        [12, -layout.labelHeight - 6], [-12 - width, -layout.labelHeight - 6],
+        [12, 6], [-12 - width, 6],
+        [-width / 2, -34 - layout.labelHeight], [-width / 2, 34],
+        [12, -34 - layout.labelHeight], [-12 - width, -34 - layout.labelHeight],
+        [12, 34], [-12 - width, 34],
+        [-width / 2, -56 - layout.labelHeight], [-width / 2, 56],
+        [12, -56 - layout.labelHeight], [-12 - width, -56 - layout.labelHeight],
+        [12, 56], [-12 - width, 56]
+      ];
+      for (const [dx, dy] of candidates) {
+        const box = { x0: px + dx, x1: px + dx + width, y0: py + dy, y1: py + dy + layout.labelHeight };
+        if (inside(box) && !overlaps(box)) {
+          placed.push(box);
+          return { text, box, far: Math.abs(dy) > 30 || (dy > 0 && Math.abs(dx) > 30 && dy > 20) };
         }
       }
-      for (const name of change.removed) {
-        for (const lane of this.#getLanes(earlierReach.reach, earlierReach.presentFamilies, `${kind}:${name}`)) {
-          cells.get(lane).removed += 1;
-        }
-      }
-    }
-    const totals = Object.values(comparison).reduce((sum, change) => ({
-      added: sum.added + change.added.length,
-      changed: sum.changed + change.changed.length,
-      removed: sum.removed + change.removed.length
-    }), { added: 0, changed: 0, removed: 0 });
-    return { entry, earlierEntry, cells, totals };
+      const box = { x0: px + 12, x1: px + 12 + width, y0: py - layout.labelHeight / 2, y1: py + layout.labelHeight / 2 };
+      placed.push(box);
+      return { text, box, far: false };
+    });
   }
 
   #renderChart (
-    columns
+    points
   ) {
     const layout = HistoryPage.LAYOUT;
-    const width = layout.laneLabelWidth + columns.length * layout.columnWidth + 16;
-    const height = layout.headerHeight + HistoryPage.LANES.length * layout.laneHeight + 8;
-    const maximum = Math.max(1, ...columns.flatMap((column) => [...column.cells.values()].flatMap((cell) => [cell.added, cell.changed, cell.removed])));
-    const scale = (value) => value === 0 ? 0 : Math.max(2, (value / maximum) * layout.barMaxHeight);
-    const groupWidth = HistoryPage.SERIES.length * layout.barWidth + (HistoryPage.SERIES.length - 1) * layout.barGap;
-    const header = columns.map((column, index) => {
-      const x = layout.laneLabelWidth + index * layout.columnWidth + layout.columnWidth / 2;
-      const previous = columns[index - 1];
-      const comparedWith = previous && previous.entry.name === column.earlierEntry.name ? '' : `vs ${column.earlierEntry.manifest.release}`;
-      return `
-        <a href="${getReleaseLink(column.entry.name, '/changes')}">
-          <text x="${x}" y="24" text-anchor="middle" class="history-release">${escapeHTML(column.entry.manifest.release)}</text>
-        </a>
-        <text x="${x}" y="42" text-anchor="middle" class="history-note">${escapeHTML(formatMonth(column.entry.manifest.released))}</text>
-        <text x="${x}" y="58" text-anchor="middle" class="history-note">${escapeHTML(comparedWith)}</text>`;
+    const days = points.map((point) => toDays(point.date));
+    const start = Math.min(...days) - 120;
+    const end = Math.max(...days) + 240;
+    const top = Math.max(...points.map((point) => point.running));
+    const step = getStep(top);
+    const yMax = Math.ceil(top / step) * step || step;
+    const plotWidth = layout.width - layout.left - layout.right;
+    const plotHeight = layout.height - layout.top - layout.bottom;
+    const xDate = (isoDate) => layout.left + (toDays(isoDate) - start) / (end - start) * plotWidth;
+    const yValue = (value) => layout.top + (1 - value / yMax) * plotHeight;
+    const x = (point) => xDate(point.date);
+    const y = (point) => yValue(point.running);
+    const baseline = layout.height - layout.bottom;
+    const firstYear = new Date(start * 864e5).getUTCFullYear() + 1;
+    const lastYear = new Date(end * 864e5).getUTCFullYear();
+    const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => firstYear + i);
+    const yTicks = Array.from({ length: yMax / step + 1 }, (_, i) => i * step);
+    const grid = `
+      ${yTicks.map((value) => `<line x1="${layout.left}" x2="${layout.width - layout.right}" y1="${yValue(value)}" y2="${yValue(value)}" class="history-grid"/><text x="${layout.left - 10}" y="${yValue(value) + 4}" text-anchor="end" class="history-tick">${formatNumber(value)}</text>`).join('')}
+      ${years.map((year) => `<line x1="${xDate(`${year}-01-01`)}" x2="${xDate(`${year}-01-01`)}" y1="${baseline}" y2="${baseline + 6}" class="history-axis"/><text x="${xDate(`${year}-01-01`)}" y="${baseline + 22}" text-anchor="middle" class="history-tick">${year}</text>`).join('')}
+      <line x1="${layout.left}" x2="${layout.width - layout.right}" y1="${baseline}" y2="${baseline}" class="history-axis"/>`;
+    const firstChild = new Map();
+    for (const point of [...points].sort((first, second) => first.date.localeCompare(second.date))) {
+      if (point.earlier && !firstChild.has(point.earlier.manifest.release)) {
+        firstChild.set(point.earlier.manifest.release, point);
+      }
+    }
+    const segments = points.filter((point) => point.earlier).map((point) => {
+      const from = points.find((other) => other.entry === point.earlier);
+      if (!from) {
+        return '';
+      }
+      const isBranch = firstChild.get(point.earlier.manifest.release) !== point;
+      const color = HistoryPage.PUBLISHERS[point.publisher].color;
+      return `<path d="M${x(from)} ${y(from)}L${x(point)} ${y(point)}" fill="none" stroke="${color}" stroke-width="2"${isBranch ? ' stroke-dasharray="6 5"' : ''}/>`;
     }).join('');
-    const lanes = HistoryPage.LANES.map((lane, laneIndex) => {
-      const y0 = layout.headerHeight + laneIndex * layout.laneHeight;
-      const baseline = y0 + layout.laneHeight - 12;
-      const cells = columns.map((column, columnIndex) => {
-        const cell = column.cells.get(lane.id);
-        const x0 = layout.laneLabelWidth + columnIndex * layout.columnWidth;
-        const left = x0 + (layout.columnWidth - groupWidth) / 2;
-        const bars = HistoryPage.SERIES.map((series, seriesIndex) => {
-          const barHeight = scale(cell[series.id]);
-          if (barHeight === 0) {
-            return '';
-          }
-          const x = left + seriesIndex * (layout.barWidth + layout.barGap);
-          const radius = Math.min(4, barHeight / 2);
-          return `<path d="M${x} ${baseline}V${baseline - barHeight + radius}Q${x} ${baseline - barHeight} ${x + radius} ${baseline - barHeight}H${x + layout.barWidth - radius}Q${x + layout.barWidth} ${baseline - barHeight} ${x + layout.barWidth} ${baseline - barHeight + radius}V${baseline}Z" fill="${series.color}"/>`;
-        }).join('');
-        const total = cell.added + cell.changed + cell.removed;
-        const label = total === 0
-          ? ''
-          : `<text x="${x0 + layout.columnWidth / 2}" y="${baseline - Math.max(scale(cell.added), scale(cell.changed), scale(cell.removed)) - 6}" text-anchor="middle" class="history-value">${formatNumber(total)}</text>`;
-        return `
-          <g class="history-cell" tabindex="0" data-lane="${escapeHTML(lane.label)}" data-release="${escapeHTML(column.entry.manifest.release)}" data-earlier="${escapeHTML(column.earlierEntry.manifest.release)}" data-added="${cell.added}" data-changed="${cell.changed}" data-removed="${cell.removed}" data-link="${escapeHTML(getReleaseLink(column.entry.name, '/changes'))}">
-            <rect x="${x0 + 2}" y="${y0 + 2}" width="${layout.columnWidth - 4}" height="${layout.laneHeight - 4}" rx="6" class="history-hit"/>
-            <line x1="${x0 + 12}" x2="${x0 + layout.columnWidth - 12}" y1="${baseline}" y2="${baseline}" class="history-baseline"/>
-            ${bars}${label}
-          </g>`;
-      }).join('');
+    const labels = this.#placeLabels(points, x, y, { x0: layout.left + 4, x1: layout.width - 4, y0: 20, y1: baseline - 4 });
+    const marks = points.map((point, index) => {
+      const label = labels.at(index);
+      const color = HistoryPage.PUBLISHERS[point.publisher].color;
+      const leader = label.far
+        ? `<line x1="${x(point)}" y1="${y(point)}" x2="${Math.min(Math.max(x(point), label.box.x0), label.box.x1)}" y2="${label.box.y0 > y(point) ? label.box.y0 : label.box.y1}" class="history-leader"/>`
+        : '';
       return `
-        <g>
-          <line x1="0" x2="${width - 8}" y1="${y0}" y2="${y0}" class="history-rule"/>
-          <text x="0" y="${y0 + layout.laneHeight / 2 + 4}" class="history-lane">${escapeHTML(lane.label)}</text>
-          ${cells}
+        <g class="history-point" tabindex="0" data-index="${index}">
+          ${leader}
+          <circle cx="${x(point)}" cy="${y(point)}" r="16" class="history-hit"/>
+          <circle cx="${x(point)}" cy="${y(point)}" r="6" fill="${color}" stroke="#ffffff" stroke-width="2"/>
+          <text x="${label.box.x0}" y="${label.box.y0 + 13}" class="history-label">${escapeHTML(label.text)}</text>
         </g>`;
     }).join('');
     return `
       <div class="history-chart" style="position: relative">
-        <svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Constructs new, changed and removed in each release, by family of document types">
-          ${header}${lanes}
+        <svg viewBox="0 0 ${layout.width} ${layout.height}" width="100%" role="img" aria-label="Running total of elements and types added, changed or removed, release by release, on a timeline">
+          ${grid}
+          <text x="${layout.left}" y="14" class="history-tick">Running total of constructs new, changed or removed</text>
+          ${segments}${marks}
         </svg>
         <div class="history-tooltip" role="status" hidden></div>
       </div>`;
   }
 
   #renderTable (
-    columns
+    points
   ) {
-    const rows = columns.flatMap((column) => HistoryPage.LANES.map((lane) => {
-      const cell = column.cells.get(lane.id);
-      if (cell.added + cell.changed + cell.removed === 0) {
-        return '';
-      }
-      return `<tr><th scope="row">${escapeHTML(column.entry.manifest.release)}</th><td>${escapeHTML(column.earlierEntry.manifest.release)}</td><td>${escapeHTML(lane.label)}</td><td class="num">${formatNumber(cell.added)}</td><td class="num">${formatNumber(cell.changed)}</td><td class="num">${formatNumber(cell.removed)}</td></tr>`;
-    })).join('');
+    const rows = [...points]
+      .sort((first, second) => String(first.date ?? '').localeCompare(String(second.date ?? '')))
+      .map((point) => `
+        <tr>
+          <th scope="row"><a href="${getReleaseLink(point.entry.name, point.earlier ? '/changes' : '')}">${escapeHTML(point.entry.manifest.release)}</a></th>
+          <td>${escapeHTML(point.publisher)}</td>
+          <td>${escapeHTML(formatMonth(point.date) || 'not recorded')}<br><span class="small muted">${escapeHTML(point.entry.manifest.releasedEvidence ?? '')}</span></td>
+          <td>${escapeHTML(point.earlier?.manifest.release ?? '—')}</td>
+          <td class="num">${point.totals ? formatNumber(point.totals.added) : '—'}</td>
+          <td class="num">${point.totals ? formatNumber(point.totals.changed) : '—'}</td>
+          <td class="num">${point.totals ? formatNumber(point.totals.removed) : '—'}</td>
+          <td class="num">${formatNumber(point.running)}</td>
+        </tr>`).join('');
     return `
       <details>
-        <summary>Show the numbers as a table</summary>
+        <summary>Show the numbers and where each date comes from</summary>
         <div class="table-box" style="margin-top: 12px">
           <table>
-            <thead><tr><th scope="col">Release</th><th scope="col">Compared with</th><th scope="col">Lane</th><th scope="col" class="num">New</th><th scope="col" class="num">Changed</th><th scope="col" class="num">Removed</th></tr></thead>
+            <thead><tr><th scope="col">Release</th><th scope="col">By</th><th scope="col">Release point</th><th scope="col">Compared with</th><th scope="col" class="num">New</th><th scope="col" class="num">Changed</th><th scope="col" class="num">Removed</th><th scope="col" class="num">Running total</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -237,35 +273,42 @@ export class HistoryPage {
   }
 
   #wireTooltip (
-    container
+    container,
+    points
   ) {
     const chart = container.querySelector('.history-chart');
     const tooltip = chart.querySelector('.history-tooltip');
-    const show = (cell) => {
-      const { lane, release, earlier, added, changed, removed } = cell.dataset;
+    const show = (mark) => {
+      const point = points.at(Number(mark.dataset.index));
+      const totals = point.totals;
       tooltip.innerHTML = `
-        <p><strong>${escapeHTML(release)}</strong> vs ${escapeHTML(earlier)}</p>
-        <p class="muted">${escapeHTML(lane)}</p>
-        ${HistoryPage.SERIES.map((series) => `<p><span class="history-key" style="background: ${series.color}"></span>${series.label}: <strong>${formatNumber(Number(cell.dataset[series.id]))}</strong></p>`).join('')}
-        <p class="muted">${Number(added) + Number(changed) + Number(removed) > 0 ? 'Click to see every change' : 'No change in this lane'}</p>`;
-      const box = cell.getBoundingClientRect();
+        <p><strong>${escapeHTML(point.entry.manifest.release)}</strong> · ${escapeHTML(HistoryPage.PUBLISHERS[point.publisher].label)}</p>
+        <p class="muted">Release point ${escapeHTML(formatMonth(point.date))}</p>
+        ${totals
+          ? `<p>Against ${escapeHTML(point.earlier.manifest.release)}: <strong>${formatNumber(totals.added)}</strong> new, <strong>${formatNumber(totals.changed)}</strong> changed, <strong>${formatNumber(totals.removed)}</strong> removed</p>`
+          : '<p>The starting point: no earlier release to compare with.</p>'}
+        <p>Running total: <strong>${formatNumber(point.running)}</strong></p>
+        ${totals ? '<p class="muted">Click to see every change</p>' : ''}`;
+      const box = mark.querySelector('circle').getBoundingClientRect();
       const frame = chart.getBoundingClientRect();
       tooltip.hidden = false;
-      const left = Math.min(box.right - frame.left + 8, frame.width - tooltip.offsetWidth - 8);
-      tooltip.style.left = `${Math.max(8, left)}px`;
-      tooltip.style.top = `${box.top - frame.top}px`;
+      const left = box.right - frame.left + 12;
+      tooltip.style.left = `${Math.max(8, Math.min(left, frame.width - tooltip.offsetWidth - 8))}px`;
+      tooltip.style.top = `${Math.max(0, box.top - frame.top - 8)}px`;
     };
-    for (const cell of chart.querySelectorAll('.history-cell')) {
-      cell.addEventListener('mouseenter', () => show(cell));
-      cell.addEventListener('focus', () => show(cell));
-      cell.addEventListener('mouseleave', () => { tooltip.hidden = true; });
-      cell.addEventListener('blur', () => { tooltip.hidden = true; });
-      cell.addEventListener('click', () => { window.location.hash = cell.dataset.link.slice(1); });
-      cell.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          window.location.hash = cell.dataset.link.slice(1);
-        }
-      });
+    const open = (mark) => {
+      const point = points.at(Number(mark.dataset.index));
+      if (point.earlier) {
+        window.location.hash = getReleaseLink(point.entry.name, '/changes').slice(1);
+      }
+    };
+    for (const mark of chart.querySelectorAll('.history-point')) {
+      mark.addEventListener('mouseenter', () => show(mark));
+      mark.addEventListener('focus', () => show(mark));
+      mark.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+      mark.addEventListener('blur', () => { tooltip.hidden = true; });
+      mark.addEventListener('click', () => open(mark));
+      mark.addEventListener('keydown', (event) => event.key === 'Enter' && open(mark));
     }
   }
 
@@ -279,32 +322,28 @@ export class HistoryPage {
     container.innerHTML = '<p class="muted" role="status">Reading every release… this takes a few seconds.</p>';
     const packages = (await this.store.listAllPackages())
       .slice()
-      .sort((first, second) => String(first.manifest.released ?? '').localeCompare(String(second.manifest.released ?? '')) ||
-        String(first.manifest.release).localeCompare(String(second.manifest.release), 'en', { numeric: true }));
-    const comparable = packages
-      .map((entry) => ({ entry, earlierEntry: packages.find((other) => other.manifest.project === entry.manifest.project && other.manifest.release === entry.manifest.buildsOn) ?? null }))
-      .filter((pair) => pair.earlierEntry !== null);
-    const missing = packages.filter((entry) => entry.manifest.buildsOn && !packages.some((other) => other.manifest.release === entry.manifest.buildsOn));
-    const columns = [];
-    for (const pair of comparable) {
-      columns.push(await this.#compareRelease(pair.entry, pair.earlierEntry));
-    }
-    const legend = HistoryPage.SERIES.map((series) => `<span class="history-legend-item"><span class="history-key" style="background: ${series.color}"></span>${series.label}</span>`).join('');
+      .sort((first, second) => String(first.manifest.release).localeCompare(String(second.manifest.release), 'en', { numeric: true }));
+    const points = await this.#buildPoints(packages);
+    const dated = points.filter((point) => point.date);
+    const undated = points.filter((point) => !point.date);
+    const legend = Object.values(HistoryPage.PUBLISHERS)
+      .map((publisher) => `<span class="history-legend-item"><span class="history-key" style="background: ${publisher.color}"></span>${publisher.label}</span>`)
+      .join('');
     container.innerHTML = `
       <section class="stack">
         <p class="eyebrow">Admins only</p>
         <h1>Release History</h1>
-        <p style="max-width: 860px">Each column is a release, oldest first, with the month it was published, compared with the release it builds on; each lane is a family of document types. Bars count the elements and types new, changed or removed; the number above them is the total. Hover a cell for the counts, click it to see every change.</p>
+        <p style="max-width: 860px">Each release sits at its release point, the month its changes stopped. The line climbs by the elements and types each release added, changed or removed against the release it builds on. Hover a release for its numbers; click it to see every change.</p>
       </section>
-      ${columns.length === 0
-        ? '<p class="muted">No two imported releases can be compared yet: a release and the release it builds on must both be imported.</p>'
-        : `<div class="history-legend" aria-hidden="true">${legend}</div>
-          <div class="table-box">${this.#renderChart(columns)}</div>
-          <p class="small muted" style="max-width: 860px">A construct counts in every lane whose document types can contain it, so a column's lanes can add up to more than its total. "Shared" means every family present in that release can contain it. Hidden releases are included. Release totals: ${columns.map((column) => `${escapeHTML(column.entry.manifest.release)} ${formatNumber(column.totals.added)} new, ${formatNumber(column.totals.changed)} changed, ${formatNumber(column.totals.removed)} removed`).join('; ')}.</p>
-          ${this.#renderTable(columns)}`}
-      ${missing.length ? `<p class="small muted">Not shown, because the release each builds on is not imported: ${missing.map((entry) => escapeHTML(entry.manifest.release)).join(', ')}.</p>` : ''}`;
-    if (columns.length > 0) {
-      this.#wireTooltip(container);
+      ${dated.length < 2
+        ? '<p class="muted">At least two releases with a recorded release point are needed. Re-import the packages built with release dates.</p>'
+        : `<div class="history-legend">${legend}<span class="history-legend-item"><svg width="28" height="10" aria-hidden="true"><path d="M0 5H28" stroke="var(--slate)" stroke-width="2" stroke-dasharray="6 5"/></svg>builds on an older release (a branch)</span></div>
+          ${this.#renderChart(dated)}
+          <p class="small muted" style="max-width: 860px">A dashed line starts from the release a draft builds on rather than the newest one before it: 2.2.0-rc1, for example, builds on 2.1.0, so it includes the changes 2.1.3 also makes. Hidden releases are included.</p>
+          ${this.#renderTable(points)}`}
+      ${undated.length ? `<p class="small muted">Not on the timeline, because their packages record no release point: ${undated.map((point) => escapeHTML(point.entry.manifest.release)).join(', ')}. Re-import the newer packages to place them.</p>` : ''}`;
+    if (dated.length >= 2) {
+      this.#wireTooltip(container, dated);
     }
   }
 }

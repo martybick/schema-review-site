@@ -348,9 +348,7 @@ with sync_playwright() as playwright:
     check(True, 'the site opens on the release the admin chose')
     page.get_by_role('link', name='History').click()
     expect(page.get_by_role('heading', name='Release History')).to_be_visible(timeout=60000)
-    check(page.locator('.history-cell').count() == 7, 'History shows one release column across seven lanes')
-    page.locator('.history-cell').nth(5).hover()
-    check(page.locator('.history-tooltip').is_visible(), 'hovering a History cell shows its counts')
+    check(page.get_by_text('At least two releases with a recorded release point are needed').is_visible(), 'History explains that the test packages record no release points')
     context.close()
 
     context = browser.new_context(viewport={'width': 1440, 'height': 1000})
