@@ -314,13 +314,26 @@ export class HistoryPage {
         window.location.hash = getReleaseLink(point.entry.name, '/changes').slice(1);
       }
     };
+    // NOTE: Escape dismisses the tooltip (WCAG 1.4.13, content on hover or
+    // focus); the same numbers are in the table under the charts.
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        tooltip.hidden = true;
+      }
+    });
     for (const mark of chart.querySelectorAll('.history-point')) {
       mark.addEventListener('mouseenter', () => show(mark));
       mark.addEventListener('focus', () => show(mark));
       mark.addEventListener('mouseleave', () => { tooltip.hidden = true; });
       mark.addEventListener('blur', () => { tooltip.hidden = true; });
       mark.addEventListener('click', () => open(mark));
-      mark.addEventListener('keydown', (event) => event.key === 'Enter' && open(mark));
+      mark.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          open(mark);
+        } else if (event.key === 'Escape') {
+          tooltip.hidden = true;
+        }
+      });
     }
   }
 
