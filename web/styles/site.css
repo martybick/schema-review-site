@@ -169,6 +169,18 @@ details.change > summary { cursor: pointer; font-size: 14px; }
 .history-legend { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; }
 .history-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .history-key { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 2px; }
+.manual { font-size: 15px; line-height: 25px; max-width: 880px; gap: 0; }
+.manual > * + * { margin-top: 14px; }
+.manual h1 { margin-bottom: 8px; }
+.manual h2 { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--surface-300); }
+.manual h3 { margin-top: 28px; }
+.manual ul, .manual ol { padding-left: 24px; }
+.manual li + li { margin-top: 6px; }
+.manual code { font-family: var(--font-mono); font-size: 13.5px; background: var(--surface-200); padding: 1px 5px; border-radius: 4px; }
+.manual .code-window code, .manual .code-window pre { background: none; padding: 0; }
+.manual-contents { position: sticky; top: 16px; }
+.row__side:has(.manual-contents) { align-self: stretch; }
+.manual-contents li { padding: 6px 0; }
 .progress { height: 12px; border-radius: 9999px; background: var(--surface-200); overflow: hidden; }
 .progress > div { height: 12px; background: var(--navy); }
 

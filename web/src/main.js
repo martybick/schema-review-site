@@ -13,6 +13,7 @@ import { escapeHTML } from './html.js';
 import { PackageStore } from './PackageStore.js';
 import { ChangesPage } from './pages/ChangesPage.js';
 import { ConstructListPage, ConstructPage } from './pages/ConstructPage.js';
+import { HelpPage } from './pages/HelpPage.js';
 import { HistoryPage } from './pages/HistoryPage.js';
 import { DecisionListPage, DecisionPage } from './pages/DecisionPage.js';
 import { ImportPage } from './pages/ImportPage.js';
@@ -48,6 +49,7 @@ class SiteApp {
       .addRoute('decisions', 'decisions')
       .addRoute('people', 'people')
       .addRoute('history', 'history')
+      .addRoute('help', 'help')
       .addRoute('import', 'import')
       .addRoute('release', 'releases/:packageName')
       .addRoute('release-validation', 'releases/:packageName/validation')
@@ -90,6 +92,7 @@ class SiteApp {
       decision: 'decisions',
       people: 'people',
       history: 'history',
+      help: 'help',
       import: 'import'
     }[route.name];
     for (const link of nav.querySelectorAll('a[data-nav]')) {
@@ -199,6 +202,10 @@ class SiteApp {
         return;
       }
       await new ImportPage(this.store, () => this.store.clearCache()).render(this.container);
+      return;
+    }
+    if (route.name === 'help') {
+      await new HelpPage(this.authController).render(this.container);
       return;
     }
     if (route.name === 'history') {

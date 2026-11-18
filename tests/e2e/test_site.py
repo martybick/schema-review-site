@@ -163,6 +163,13 @@ with sync_playwright() as playwright:
     check(page.locator('tbody tr').count() == 12, 'decision list shows D1 to D12')
     check('0 of 12 settled' in page.inner_text('main'), 'decision list shows none settled')
 
+    page.get_by_role('link', name='Help').click()
+    expect(page.get_by_role('heading', name='USLM 2 Review: User Manual')).to_be_visible(timeout=15000)
+    check(page.get_by_role('heading', name='For Admins').is_visible() and page.get_by_role('heading', name='Importing a Release').is_visible(), 'admin sees the manual with its admin part')
+    page.goto(SITE + '/#/help#release-history')
+    expect(page.locator('#release-history')).to_be_in_viewport(timeout=15000)
+    check(True, 'a manual section link scrolls to it')
+    page.screenshot(path=f'{SHOTS}/14-help.png')
     check(page.locator('#nav-people').is_visible(), 'admin sees People')
     page.goto(SITE + '/#/people')
     expect(page.get_by_role('heading', name='Invite Someone')).to_be_visible(timeout=15000)
@@ -200,6 +207,9 @@ with sync_playwright() as playwright:
 
     # Slice 2 as a member: reply, oppose, and the rules hold.
     check(not page.locator('#nav-people').is_visible(), 'user does not see People')
+    page.goto(SITE + '/#/help')
+    expect(page.get_by_role('heading', name='Getting In')).to_be_visible(timeout=15000)
+    check(page.get_by_role('heading', name='For Admins').count() == 0, 'a member sees the manual without its admin part')
     page.goto(SITE + '/#/people')
     expect(page.get_by_text('Only admins can manage people.')).to_be_visible()
     check(True, 'user is refused the People page')
