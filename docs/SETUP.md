@@ -72,3 +72,15 @@ PACKAGES=/path/to/packages python3 tests/e2e/test_site.py
 ```
 
 Set `CHROME=/path/to/chrome` to use an installed Chrome instead of Playwright's own browser.
+
+## Choosing what the working group sees
+
+On any release's home page, admins see a **Release Settings (Admins)** panel:
+
+- **Open the site on this release** makes it the release everyone lands on.
+- **Hide from members** takes it off members' lists and pages; admins still see it, marked
+  "Hidden from members". **Show to members** brings it back.
+
+Hiding controls what the site shows, not who can read the files: the package stays in Storage,
+readable to anyone invited who knows its path. Use it to stage what the group reviews, not to keep
+anything secret.

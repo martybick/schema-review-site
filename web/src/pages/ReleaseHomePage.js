@@ -47,10 +47,12 @@ export class ReleaseHomePage {
   constructor (
     store,
     dataStore,
-    packageEntry
+    packageEntry,
+    siteControls = null
   ) {
     this.store = store;
     this.dataStore = dataStore;
+    this.siteControls = siteControls;
     this.packageEntry = packageEntry;
     this.manifest = packageEntry.manifest;
   }
@@ -126,10 +128,60 @@ export class ReleaseHomePage {
     }
     const items = packages.map((entry) => {
       const label = `${String(entry.manifest.project).toUpperCase()} ${entry.manifest.release}`;
-      const status = ReleaseHomePage.STATUS_LABELS[entry.manifest.status] ?? entry.manifest.status;
+      const notes = [
+        this.store.isDefault(entry.name) ? 'opens first' : '',
+        this.store.isHidden(entry.name) ? 'hidden from members' : ''
+      ].filter(Boolean).join(', ');
+      const status = `${ReleaseHomePage.STATUS_LABELS[entry.manifest.status] ?? entry.manifest.status}${notes ? ` (${notes})` : ''}`;
       return `<li><span>${entry.name === this.packageEntry.name ? `<strong>${escapeHTML(label)}</strong> (this page)` : `<a href="${getReleaseLink(entry.name)}">${escapeHTML(label)}</a>`}</span><span class="muted">${escapeHTML(status)}</span></li>`;
     }).join('');
     target.innerHTML = `<h3 id="releases-heading">Releases on This Site</h3><ul class="list-plain">${items}</ul>`;
+  }
+
+  // NOTE: admins only: which release the site opens on, and whether
+  // members see this one.
+  #renderReleaseSettings () {
+    const controls = this.siteControls;
+    if (!controls?.isAdmin) {
+      return '';
+    }
+    const name = this.packageEntry.name;
+    const isDefault = controls.isDefault(name);
+    const isHidden = controls.isHidden(name);
+    return `
+      <section class="panel stack" id="release-settings" aria-labelledby="release-settings-heading" style="border: 2px solid var(--amber)">
+        <h3 id="release-settings-heading">Release Settings (Admins)</h3>
+        <p class="small">${isDefault ? 'The site opens on this release.' : 'The site does not open on this release.'} ${isHidden ? '<strong>Hidden from members:</strong> only admins see it.' : 'Members can see it.'}</p>
+        <div class="stack stack--tight">
+          ${isDefault ? '' : '<button class="button button--secondary" type="button" id="make-default">Open the site on this release</button>'}
+          <button class="button button--secondary" type="button" id="toggle-hidden">${isHidden ? 'Show to members' : 'Hide from members'}</button>
+        </div>
+        <div class="settings-status"></div>
+      </section>`;
+  }
+
+  #wireReleaseSettings (
+    container
+  ) {
+    const panel = container.querySelector('#release-settings');
+    if (!panel) {
+      return;
+    }
+    const run = async (work) => {
+      for (const button of panel.querySelectorAll('button')) {
+        button.disabled = true;
+      }
+      try {
+        await work();
+      } catch (error) {
+        panel.querySelector('.settings-status').innerHTML = `<div class="message message--error" role="alert">Could not save: ${escapeHTML(error.message)}</div>`;
+        for (const button of panel.querySelectorAll('button')) {
+          button.disabled = false;
+        }
+      }
+    };
+    panel.querySelector('#make-default')?.addEventListener('click', () => run(() => this.siteControls.setDefault(this.packageEntry.name)));
+    panel.querySelector('#toggle-hidden').addEventListener('click', () => run(() => this.siteControls.setHidden(this.packageEntry.name, !this.siteControls.isHidden(this.packageEntry.name))));
   }
 
   #renderPackageFiles () {
@@ -252,7 +304,7 @@ export class ReleaseHomePage {
     container.innerHTML = `
       <section class="title-row">
         <div class="stack stack--tight">
-          <p class="eyebrow">${escapeHTML(ReleaseHomePage.STATUS_LABELS[manifest.status] ?? manifest.status)}</p>
+          <p class="eyebrow">${escapeHTML(ReleaseHomePage.STATUS_LABELS[manifest.status] ?? manifest.status)}${this.siteControls?.isAdmin && this.store.isHidden(this.packageEntry.name) ? ' · <span style="color: var(--navy); background: var(--amber); padding: 0 6px; border-radius: 4px">Hidden from members</span>' : ''}</p>
           <h1>${escapeHTML(String(manifest.project ?? '').toUpperCase())} ${escapeHTML(manifest.release)}</h1>
           <p style="max-width: 760px">${escapeHTML(endSentence(manifest.description))}${manifest.buildsOn ? ` Builds on ${escapeHTML(manifest.buildsOn)}.` : ''}</p>
           <p class="small muted">Imported from ${escapeHTML(source.repository)} at commit ${escapeHTML(String(source.commit ?? '').slice(0, 7))} · package built ${escapeHTML(formatDate(manifest.created))}</p>
@@ -271,11 +323,13 @@ export class ReleaseHomePage {
           <section class="stack" id="decisions" aria-labelledby="decisions-heading"><p class="muted" role="status">Loading decisions…</p></section>
         </div>
         <aside class="row__side">
+          ${this.#renderReleaseSettings()}
           <section class="stack" id="other-releases" aria-labelledby="releases-heading"></section>
           ${this.#renderSamples()}
           ${this.#renderPackageFiles()}
         </aside>
       </div>`;
+    this.#wireReleaseSettings(container);
     await Promise.all([
       this.#fillReleases(container).catch(() => container.querySelector('#other-releases')?.remove()),
       this.#fillDecisions(container).catch((error) => {

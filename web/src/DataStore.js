@@ -12,6 +12,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -237,6 +238,30 @@ export class DataStore {
     decisionKey
   ) {
     await deleteDoc(doc(services.db, 'positions', `${decisionKey}__${this.#getMyEmail()}`));
+  }
+
+  // Site settings
+
+  async getSiteSettings (
+    project
+  ) {
+    const snapshot = await getDoc(doc(services.db, 'siteSettings', project));
+    return snapshot.exists() ? snapshot.data() : { defaultRelease: null, hiddenReleases: [] };
+  }
+
+  async saveSiteSettings (
+    project,
+    {
+      defaultRelease,
+      hiddenReleases
+    }
+  ) {
+    await setDoc(doc(services.db, 'siteSettings', project), {
+      defaultRelease: defaultRelease ?? null,
+      hiddenReleases,
+      updatedBy: this.#getMyEmail(),
+      updatedAt: serverTimestamp()
+    });
   }
 
   // Decision records

@@ -56,6 +56,7 @@ class SiteApp {
       .addRoute('release-decisions', 'releases/:packageName/decisions')
       .addRoute('decision', 'releases/:packageName/decisions/:decisionID');
     this.renderCount = 0;
+    this.siteSettings = null;
   }
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -130,6 +131,52 @@ class SiteApp {
     });
   }
 
+  // NOTE: read once per sign-in; tells the package store which release the
+  // site opens on and which releases are hidden from members.
+  async #loadSiteSettings () {
+    if (this.siteSettings === null) {
+      try {
+        this.siteSettings = await this.dataStore.getSiteSettings(SITE_CONFIG.project);
+      } catch (error) {
+        console.warn(`Site settings unavailable: ${error.message}`);
+        this.siteSettings = { defaultRelease: null, hiddenReleases: [] };
+      }
+    }
+    this.store.setVisibility({
+      defaultName: this.siteSettings.defaultRelease,
+      hidden: this.siteSettings.hiddenReleases ?? [],
+      showHidden: this.authController.isAdmin
+    });
+  }
+
+  async #saveSiteSettings (
+    changes
+  ) {
+    const settings = { ...this.siteSettings, ...changes };
+    await this.dataStore.saveSiteSettings(SITE_CONFIG.project, settings);
+    this.siteSettings = settings;
+    await this.#loadSiteSettings();
+    await this.#renderRoute(this.router.getCurrentRoute());
+  }
+
+  #getSiteControls () {
+    return {
+      isAdmin: this.authController.isAdmin,
+      isDefault: (packageName) => this.store.isDefault(packageName),
+      isHidden: (packageName) => this.store.isHidden(packageName),
+      setDefault: (packageName) => this.#saveSiteSettings({ defaultRelease: packageName }),
+      setHidden: (packageName, hide) => {
+        const hidden = new Set(this.siteSettings.hiddenReleases ?? []);
+        if (hide) {
+          hidden.add(packageName);
+        } else {
+          hidden.delete(packageName);
+        }
+        return this.#saveSiteSettings({ hiddenReleases: [...hidden].sort() });
+      }
+    };
+  }
+
   async #findPackageEntry (
     params
   ) {
@@ -141,6 +188,7 @@ class SiteApp {
   async #renderMemberPage (
     route
   ) {
+    await this.#loadSiteSettings();
     if (route.name === 'import') {
       if (!this.authController.isAdmin) {
         renderMessage(this.container, 'Only admins can import release packages.', true);
@@ -167,8 +215,8 @@ class SiteApp {
       return;
     }
     const page = {
-      home: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry),
-      release: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry),
+      home: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry, this.#getSiteControls()),
+      release: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry, this.#getSiteControls()),
       validation: () => new ValidationPage(this.store, packageEntry),
       'release-validation': () => new ValidationPage(this.store, packageEntry),
       constructs: () => new ConstructListPage(this.store, packageEntry),
@@ -227,6 +275,7 @@ class SiteApp {
     document.querySelector('.site-header__name').textContent = SITE_CONFIG.siteName;
     this.authController.addListener(() => {
       this.store.clearCache();
+      this.siteSettings = null;
       this.#renderRoute(this.router.getCurrentRoute());
     });
     this.router.start((route) => this.#renderRoute(route));

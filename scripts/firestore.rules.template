@@ -13,6 +13,8 @@ rules_version = '2';
 //   changeable until the working group's decision is recorded.
 // - decisionRecords/{decisionKey}: the working group's recorded outcome, and
 //   decisionEvents/{id}: every recording, kept as history. Admins only.
+// - siteSettings/{project}: the release the site opens on and the releases
+//   hidden from members. Admins only.
 service cloud.firestore {
   match /databases/{database}/documents {
     function isSignedIn () {
@@ -86,6 +88,16 @@ service cloud.firestore {
         && request.resource.data.reason.size() <= 2000
         && !isSettled(request.resource.data.decisionKey);
       allow delete: if isMember() && resource.data.email == myEmail() && !isSettled(resource.data.decisionKey);
+    }
+
+    // NOTE: which release the site opens on and which releases members see.
+    match /siteSettings/{project} {
+      allow read: if isMember();
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly(['defaultRelease', 'hiddenReleases', 'updatedBy', 'updatedAt'])
+        && request.resource.data.hiddenReleases is list
+        && request.resource.data.updatedBy == myEmail()
+        && request.resource.data.updatedAt == request.time;
     }
 
     match /decisionRecords/{decisionKey} {

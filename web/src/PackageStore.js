@@ -38,6 +38,7 @@ export class PackageStore {
 
   #cache = new Map();
   #packagesPromise = null;
+  #visibility = { defaultName: null, hidden: new Set(), showHidden: true };
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Instance internal methods
@@ -83,7 +84,33 @@ export class PackageStore {
   // Instance properties & methods
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  async listPackages () {
+  // NOTE: admins choose, on a release's home page, which release the site
+  // opens on and which releases members see (siteSettings in Firestore).
+  // Hiding is a matter of what the site shows, not of access: the files of
+  // a hidden release stay readable to members who know where to look.
+  setVisibility (
+    {
+      defaultName = null,
+      hidden = [],
+      showHidden = false
+    }
+  ) {
+    this.#visibility = { defaultName, hidden: new Set(hidden), showHidden };
+  }
+
+  isHidden (
+    packageName
+  ) {
+    return this.#visibility.hidden.has(packageName);
+  }
+
+  isDefault (
+    packageName
+  ) {
+    return this.#visibility.defaultName === packageName;
+  }
+
+  async listAllPackages () {
     this.#packagesPromise ??= this.#loadPackages();
     try {
       return await this.#packagesPromise;
@@ -91,6 +118,14 @@ export class PackageStore {
       this.#packagesPromise = null;
       throw error;
     }
+  }
+
+  // NOTE: the packages this person may see, the default release first.
+  async listPackages () {
+    const packages = (await this.listAllPackages())
+      .filter((entry) => this.#visibility.showHidden || !this.isHidden(entry.name));
+    const defaultEntry = packages.find((entry) => this.isDefault(entry.name));
+    return defaultEntry ? [defaultEntry, ...packages.filter((entry) => entry !== defaultEntry)] : packages;
   }
 
   async findPackage (
@@ -101,8 +136,8 @@ export class PackageStore {
   }
 
   async findDefaultPackage () {
-    const packages = await this.listPackages();
-    return packages[0] ?? null;
+    const packages = (await this.listPackages()).filter((entry) => !this.isHidden(entry.name));
+    return packages[0] ?? (await this.listPackages())[0] ?? null;
   }
 
   async findPackageByRelease (
