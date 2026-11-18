@@ -116,6 +116,7 @@ export class HistoryPage {
         totals,
         step,
         running: base + step,
+        coverage: entry.manifest.validation?.byRole?.regression ?? null,
         date: entry.manifest.released,
         publisher: this.#getPublisher(entry.manifest)
       });
@@ -129,7 +130,8 @@ export class HistoryPage {
     points,
     x,
     y,
-    bounds
+    bounds,
+    getLabel
   ) {
     const layout = HistoryPage.LAYOUT;
     const placed = [];
@@ -149,7 +151,7 @@ export class HistoryPage {
       linePoints.some(([px, py]) => px > box.x0 - 2 && px < box.x1 + 2 && py > box.y0 - 2 && py < box.y1 + 2);
     const inside = (box) => box.x0 >= bounds.x0 && box.x1 <= bounds.x1 && box.y0 >= bounds.y0 && box.y1 <= bounds.y1;
     return points.map((point) => {
-      const text = `${point.entry.manifest.release}${point.step ? `  +${formatNumber(point.step)}` : ''}`;
+      const text = getLabel(point);
       const width = text.length * 7.2;
       const px = x(point);
       const py = y(point);
@@ -178,29 +180,38 @@ export class HistoryPage {
     });
   }
 
+  // NOTE: one chart: releases on a time axis, a value per release, each
+  // release joined to the release it builds on.
   #renderChart (
-    points
+    points,
+    {
+      getValue,
+      getLabel,
+      title,
+      yMax: fixedMax = null,
+      formatTick = formatNumber,
+      chartID
+    },
+    timeRange
   ) {
     const layout = HistoryPage.LAYOUT;
-    const days = points.map((point) => toDays(point.date));
-    const start = Math.min(...days) - 120;
-    const end = Math.max(...days) + 240;
-    const top = Math.max(...points.map((point) => point.running));
-    const step = getStep(top);
-    const yMax = Math.ceil(top / step) * step || step;
+    const { start, end } = timeRange;
+    const top = Math.max(...points.map(getValue));
+    const step = fixedMax ? fixedMax / 4 : getStep(top);
+    const yMax = fixedMax ?? (Math.ceil(top / step) * step || step);
     const plotWidth = layout.width - layout.left - layout.right;
     const plotHeight = layout.height - layout.top - layout.bottom;
     const xDate = (isoDate) => layout.left + (toDays(isoDate) - start) / (end - start) * plotWidth;
     const yValue = (value) => layout.top + (1 - value / yMax) * plotHeight;
     const x = (point) => xDate(point.date);
-    const y = (point) => yValue(point.running);
+    const y = (point) => yValue(getValue(point));
     const baseline = layout.height - layout.bottom;
     const firstYear = new Date(start * 864e5).getUTCFullYear() + 1;
     const lastYear = new Date(end * 864e5).getUTCFullYear();
     const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => firstYear + i);
     const yTicks = Array.from({ length: yMax / step + 1 }, (_, i) => i * step);
     const grid = `
-      ${yTicks.map((value) => `<line x1="${layout.left}" x2="${layout.width - layout.right}" y1="${yValue(value)}" y2="${yValue(value)}" class="history-grid"/><text x="${layout.left - 10}" y="${yValue(value) + 4}" text-anchor="end" class="history-tick">${formatNumber(value)}</text>`).join('')}
+      ${yTicks.map((value) => `<line x1="${layout.left}" x2="${layout.width - layout.right}" y1="${yValue(value)}" y2="${yValue(value)}" class="history-grid"/><text x="${layout.left - 10}" y="${yValue(value) + 4}" text-anchor="end" class="history-tick">${formatTick(value)}</text>`).join('')}
       ${years.map((year) => `<line x1="${xDate(`${year}-01-01`)}" x2="${xDate(`${year}-01-01`)}" y1="${baseline}" y2="${baseline + 6}" class="history-axis"/><text x="${xDate(`${year}-01-01`)}" y="${baseline + 22}" text-anchor="middle" class="history-tick">${year}</text>`).join('')}
       <line x1="${layout.left}" x2="${layout.width - layout.right}" y1="${baseline}" y2="${baseline}" class="history-axis"/>`;
     const firstChild = new Map();
@@ -218,7 +229,7 @@ export class HistoryPage {
       const color = HistoryPage.PUBLISHERS[point.publisher].color;
       return `<path d="M${x(from)} ${y(from)}L${x(point)} ${y(point)}" fill="none" stroke="${color}" stroke-width="2"${isBranch ? ' stroke-dasharray="6 5"' : ''}/>`;
     }).join('');
-    const labels = this.#placeLabels(points, x, y, { x0: layout.left + 4, x1: layout.width - 4, y0: 20, y1: baseline - 4 });
+    const labels = this.#placeLabels(points, x, y, { x0: layout.left + 4, x1: layout.width - 4, y0: 20, y1: baseline - 4 }, getLabel);
     const marks = points.map((point, index) => {
       const label = labels.at(index);
       const color = HistoryPage.PUBLISHERS[point.publisher].color;
@@ -234,10 +245,10 @@ export class HistoryPage {
         </g>`;
     }).join('');
     return `
-      <div class="history-chart" style="position: relative">
-        <svg viewBox="0 0 ${layout.width} ${layout.height}" width="100%" role="img" aria-label="Running total of elements and types added, changed or removed, release by release, on a timeline">
+      <div class="history-chart" id="${chartID}" style="position: relative">
+        <svg viewBox="0 0 ${layout.width} ${layout.height}" width="100%" role="img" aria-label="${escapeHTML(title)}, release by release, on a timeline">
           ${grid}
-          <text x="${layout.left}" y="14" class="history-tick">Running total of constructs new, changed or removed</text>
+          <text x="${layout.left}" y="14" class="history-tick">${escapeHTML(title)}</text>
           ${segments}${marks}
         </svg>
         <div class="history-tooltip" role="status" hidden></div>
@@ -259,13 +270,14 @@ export class HistoryPage {
           <td class="num">${point.totals ? formatNumber(point.totals.changed) : '—'}</td>
           <td class="num">${point.totals ? formatNumber(point.totals.removed) : '—'}</td>
           <td class="num">${formatNumber(point.running)}</td>
+          <td class="num">${point.coverage?.samples ? `${formatNumber(point.coverage.schemaValid)} of ${formatNumber(point.coverage.samples)}` : '—'}</td>
         </tr>`).join('');
     return `
       <details>
         <summary>Show the numbers and where each date comes from</summary>
         <div class="table-box" style="margin-top: 12px">
           <table>
-            <thead><tr><th scope="col">Release</th><th scope="col">By</th><th scope="col">Release point</th><th scope="col">Compared with</th><th scope="col" class="num">New</th><th scope="col" class="num">Changed</th><th scope="col" class="num">Removed</th><th scope="col" class="num">Running total</th></tr></thead>
+            <thead><tr><th scope="col">Release</th><th scope="col">By</th><th scope="col">Release point</th><th scope="col">Compared with</th><th scope="col" class="num">New</th><th scope="col" class="num">Changed</th><th scope="col" class="num">Removed</th><th scope="col" class="num">Running total</th><th scope="col" class="num">GPO samples accepted</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -273,10 +285,9 @@ export class HistoryPage {
   }
 
   #wireTooltip (
-    container,
+    chart,
     points
   ) {
-    const chart = container.querySelector('.history-chart');
     const tooltip = chart.querySelector('.history-tooltip');
     const show = (mark) => {
       const point = points.at(Number(mark.dataset.index));
@@ -288,6 +299,7 @@ export class HistoryPage {
           ? `<p>Against ${escapeHTML(point.earlier.manifest.release)}: <strong>${formatNumber(totals.added)}</strong> new, <strong>${formatNumber(totals.changed)}</strong> changed, <strong>${formatNumber(totals.removed)}</strong> removed</p>`
           : '<p>The starting point: no earlier release to compare with.</p>'}
         <p>Running total: <strong>${formatNumber(point.running)}</strong></p>
+        ${point.coverage ? `<p>GPO samples accepted: <strong>${formatNumber(point.coverage.schemaValid)} of ${formatNumber(point.coverage.samples)}</strong></p>` : ''}
         ${totals ? '<p class="muted">Click to see every change</p>' : ''}`;
       const box = mark.querySelector('circle').getBoundingClientRect();
       const frame = chart.getBoundingClientRect();
@@ -329,21 +341,51 @@ export class HistoryPage {
     const legend = Object.values(HistoryPage.PUBLISHERS)
       .map((publisher) => `<span class="history-legend-item"><span class="history-key" style="background: ${publisher.color}"></span>${publisher.label}</span>`)
       .join('');
+    const covered = dated.filter((point) => point.coverage && point.coverage.samples > 0);
+    const corpusSizes = new Set(covered.map((point) => point.coverage.samples));
+    const days = dated.map((point) => toDays(point.date));
+    const timeRange = { start: Math.min(...days) - 120, end: Math.max(...days) + 240 };
     container.innerHTML = `
       <section class="stack">
         <p class="eyebrow">Admins only</p>
         <h1>Release History</h1>
-        <p style="max-width: 860px">Each release sits at its release point, the month its changes stopped. The line climbs by the elements and types each release added, changed or removed against the release it builds on. Hover a release for its numbers; click it to see every change.</p>
+        <p style="max-width: 860px">Each release sits at its release point, the month its changes stopped. Hover a release for its numbers; click it to see every change.</p>
       </section>
       ${dated.length < 2
         ? '<p class="muted">At least two releases with a recorded release point are needed. Re-import the packages built with release dates.</p>'
         : `<div class="history-legend">${legend}<span class="history-legend-item"><svg width="28" height="10" aria-hidden="true"><path d="M0 5H28" stroke="var(--slate)" stroke-width="2" stroke-dasharray="6 5"/></svg>builds on an older release (a branch)</span></div>
-          ${this.#renderChart(dated)}
+          <section class="stack">
+            <h2>How Much Changed</h2>
+            <p class="small muted" style="max-width: 860px">The line climbs by the elements and types each release added, changed or removed against the release it builds on.</p>
+            ${this.#renderChart(dated, {
+              chartID: 'history-changes',
+              title: 'Running total of constructs new, changed or removed',
+              getValue: (point) => point.running,
+              getLabel: (point) => `${point.entry.manifest.release}${point.step ? `  +${formatNumber(point.step)}` : ''}`
+            }, timeRange)}
+          </section>
+          ${covered.length >= 2
+            ? `<section class="stack">
+                <h2>How Many Real Documents Each Release Accepts</h2>
+                <p class="small muted" style="max-width: 860px">The same ${corpusSizes.size === 1 ? formatNumber([...corpusSizes][0]) : ''} sample documents GPO has published (bills and resolutions, public laws, Statutes at Large, statute compilations, the Federal Register and CFR, committee reports and CBO estimates), checked against each release's schema. ${corpusSizes.size > 1 ? '<strong>The releases were checked against different sample sets, so the shares are not strictly comparable.</strong> ' : ''}USLM 1.0.18 and 2.0.0 used other namespaces, so these documents cannot be checked against them; 2.0.0 accepts all ${formatNumber(dated.find((point) => point.entry.manifest.release === '2.0.0')?.entry.manifest.validation?.byRole?.proposal?.samples ?? 0) || 'of the'} samples published with it.</p>
+                ${this.#renderChart(covered, {
+                  chartID: 'history-coverage',
+                  title: 'Share of GPO\'s published samples valid against the schema',
+                  yMax: 100,
+                  formatTick: (value) => `${value}%`,
+                  getValue: (point) => 100 * point.coverage.schemaValid / point.coverage.samples,
+                  getLabel: (point) => `${point.entry.manifest.release}  ${Math.round(100 * point.coverage.schemaValid / point.coverage.samples)}%`
+                }, timeRange)}
+              </section>`
+            : ''}
           <p class="small muted" style="max-width: 860px">A dashed line starts from the release a draft builds on rather than the newest one before it: 2.2.0-rc1, for example, builds on 2.1.0, so it includes the changes 2.1.3 also makes. Hidden releases are included.</p>
           ${this.#renderTable(points)}`}
       ${undated.length ? `<p class="small muted">Not on the timeline, because their packages record no release point: ${undated.map((point) => escapeHTML(point.entry.manifest.release)).join(', ')}. Re-import the newer packages to place them.</p>` : ''}`;
-    if (dated.length >= 2) {
-      this.#wireTooltip(container, dated);
+    for (const [chartID, chartPoints] of [['history-changes', dated], ['history-coverage', covered]]) {
+      const chart = container.querySelector(`#${chartID}`);
+      if (chart) {
+        this.#wireTooltip(chart, chartPoints);
+      }
     }
   }
 }
