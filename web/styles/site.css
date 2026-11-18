@@ -2,7 +2,7 @@
  * @file site.css
  * @copyright Xcential Corporation
  *
- * Site tokens: GPO.gov grey (#627d90) leads, one blue accent for links,
+ * Site tokens: GPO.gov grey (#587285) leads, one blue accent for links,
  * pink for signals; Open Sans for text and Bitter for headings; no text
  * smaller than 14px; flat panels.
  */
@@ -12,8 +12,8 @@
 /* ------------------------------------------------------------------------ */
 
 :root {
-  --navy: #627d90;
-  --navy-700: #4f6677;
+  --navy: #587285;
+  --navy-700: #465c6c;
   --heading: #2f4252;
   --on-grey: #e6edf2;
   --blue: #4a93f0;
@@ -171,8 +171,8 @@ details.change > summary { cursor: pointer; font-size: 14px; }
 .history-leader { stroke: var(--slate); stroke-opacity: 0.6; }
 .history-hit { fill: transparent; }
 .history-point { cursor: pointer; outline: none; }
-.history-point:hover .history-hit, .history-point:focus .history-hit { fill: rgba(98, 125, 144, 0.12); }
-.history-tooltip { position: absolute; z-index: 2; min-width: 220px; max-width: 320px; background: #ffffff; border: 1px solid var(--surface-300); border-radius: var(--radius-md); box-shadow: 0 4px 16px rgba(98, 125, 144, 0.25); padding: 10px 14px; font-size: 14px; line-height: 21px; pointer-events: none; }
+.history-point:hover .history-hit, .history-point:focus .history-hit { fill: rgba(88, 114, 133, 0.12); }
+.history-tooltip { position: absolute; z-index: 2; min-width: 220px; max-width: 320px; background: #ffffff; border: 1px solid var(--surface-300); border-radius: var(--radius-md); box-shadow: 0 4px 16px rgba(88, 114, 133, 0.25); padding: 10px 14px; font-size: 14px; line-height: 21px; pointer-events: none; }
 .history-legend { display: flex; flex-wrap: wrap; gap: 20px; font-size: 14px; }
 .history-legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .history-key { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 2px; }
