@@ -42,7 +42,7 @@ All validation was done when the package was built, with the JDK's Xerces for th
 
 ## Comments and Decisions
 
-Comment where the problem is: on the construct's page or the decision's page. Each comment records the release you made it on.
+Comment where the problem is: on a construct's page, a decision's page, or, for anything about a release as a whole, at the bottom of the release's home page. Pick a type, write the comment and click **Post comment**. Each comment records the release you made it on.
 
 | Type | Use it when |
 | --- | --- |
@@ -53,8 +53,11 @@ Comment where the problem is: on the construct's page or the decision's page. Ea
 | Alternative proposed | You have a different model; describe it, and link your branch if you made one |
 | Question | You want an explanation before taking a view |
 | Editorial | Typos and wording |
+| Decision needed | The group should settle a modeling choice; say what the choice is and the options you see |
 
 Put element names and XML in backticks, for example `rollCall`; they show as code. Anyone can reply. An admin sets each comment's status: open, accepted, rejected, deferred or addressed. You can delete your own comments.
+
+**Asking for a decision.** Post a comment of type **Decision needed** wherever the question comes up. It is listed under **Requests for a Decision** on the Decisions page until an admin turns it into a decision with options, numbered WG1, WG2 and so on (the register's own decisions are D1, D2...). Everyone can then take positions on it like any other decision.
 
 On a decision's page you read the options, the proposed choice and the full text from the decision register, then:
 
@@ -144,7 +147,8 @@ Hiding controls what the site shows, not who can read the files: an invited pers
 
 - **Comments:** each comment has a **Status** menu for admins. Set it as the group works through comments: accepted, rejected, deferred, or addressed once a release fixes it.
 - **Decisions:** on a decision's page, the **Record the Outcome** panel records **Ratify** (the proposed option), **Changed to another option** (pick it), or **Reopen**, with a note such as the meeting and what was said. Each recording is kept in the history. Positions close while a decision is ratified or changed.
-- **New decisions** come from the decision register in GitHub (`decisions/README.md`) and appear when a package carrying them is imported.
+- **Requests for a decision:** "Decision needed" comments are listed under **Requests for a Decision** on the Decisions page. Click **Turn into a decision**, give it a title, background, options (one per line: "A. ...", "B. ...") and, if you have one, the proposed option, then **Create the decision**. It gets the next WG number, opens for positions at once, and the request is marked accepted.
+- **Into the register:** add each WG decision to the decision register in GitHub (`decisions/README.md`) with the same number, so it travels with the next release; positions, comments and outcomes stay attached to the number. Decisions that start in the register (D1, D2...) appear when a package carrying them is imported.
 
 ### Release History
 

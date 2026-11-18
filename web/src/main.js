@@ -234,8 +234,8 @@ class SiteApp {
       return;
     }
     const page = {
-      home: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry, this.#getSiteControls()),
-      release: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry, this.#getSiteControls()),
+      home: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry, this.#getSiteControls(), this.authController),
+      release: () => new ReleaseHomePage(this.store, this.dataStore, packageEntry, this.#getSiteControls(), this.authController),
       validation: () => new ValidationPage(this.store, packageEntry),
       'release-validation': () => new ValidationPage(this.store, packageEntry),
       constructs: () => new ConstructListPage(this.store, packageEntry),
@@ -243,8 +243,8 @@ class SiteApp {
       construct: () => new ConstructPage(this.store, this.dataStore, this.authController, packageEntry, route.params.kind, route.params.name),
       'release-changes': () => new ChangesPage(this.store, packageEntry),
       'release-changes-against': () => new ChangesPage(this.store, packageEntry, route.params.against),
-      decisions: () => new DecisionListPage(this.store, this.dataStore, packageEntry),
-      'release-decisions': () => new DecisionListPage(this.store, this.dataStore, packageEntry),
+      decisions: () => new DecisionListPage(this.store, this.dataStore, packageEntry, this.authController),
+      'release-decisions': () => new DecisionListPage(this.store, this.dataStore, packageEntry, this.authController),
       decision: () => new DecisionPage(this.store, this.dataStore, this.authController, packageEntry, route.params.decisionID)
     }[route.name];
     if (!page) {

@@ -13,6 +13,7 @@ rules_version = '2';
 //   changeable until the working group's decision is recorded.
 // - decisionRecords/{decisionKey}: the working group's recorded outcome, and
 //   decisionEvents/{id}: every recording, kept as history. Admins only.
+// - siteDecisions/{decisionKey}: decisions raised on the site. Admins only.
 // - siteSettings/{project}: the release the site opens on and the releases
 //   hidden from members. Admins only.
 service cloud.firestore {
@@ -69,7 +70,7 @@ service cloud.firestore {
         && request.resource.data.body is string
         && request.resource.data.body.size() > 0
         && request.resource.data.body.size() <= 10000
-        && request.resource.data.type in ['defect', 'gap', 'naming', 'documentation', 'alternative', 'question', 'editorial', 'reply'];
+        && request.resource.data.type in ['defect', 'gap', 'naming', 'documentation', 'alternative', 'question', 'editorial', 'decision-request', 'reply'];
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusBy', 'statusAt'])
         && request.resource.data.status in ['open', 'accepted', 'rejected', 'deferred', 'addressed'];
@@ -98,6 +99,24 @@ service cloud.firestore {
         && request.resource.data.hiddenReleases is list
         && request.resource.data.updatedBy == myEmail()
         && request.resource.data.updatedAt == request.time;
+    }
+
+    // NOTE: decisions the working group raises on the site (from a "Decision
+    // needed" comment), beside those in a release's decision register.
+    // Admins create them; they are never edited, only recorded on.
+    match /siteDecisions/{decisionKey} {
+      allow read: if isMember();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['project', 'id', 'title', 'question', 'options', 'proposedOption', 'requestID', 'raisedIn', 'createdBy', 'createdAt'])
+        && decisionKey == request.resource.data.project + '-' + request.resource.data.id
+        && request.resource.data.id.matches('WG[0-9]+')
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.options is list
+        && request.resource.data.options.size() >= 2
+        && request.resource.data.createdBy == myEmail()
+        && request.resource.data.createdAt == request.time;
+      allow delete: if isAdmin();
     }
 
     match /decisionRecords/{decisionKey} {

@@ -42,7 +42,8 @@ export class DataStore {
     documentation: 'Documentation',
     alternative: 'Alternative proposed',
     question: 'Question',
-    editorial: 'Editorial'
+    editorial: 'Editorial',
+    'decision-request': 'Decision needed'
   };
 
   static COMMENT_STATUSES = {
@@ -238,6 +239,56 @@ export class DataStore {
     decisionKey
   ) {
     await deleteDoc(doc(services.db, 'positions', `${decisionKey}__${this.#getMyEmail()}`));
+  }
+
+  // Decisions raised on the site
+
+  async listSiteDecisions (
+    project
+  ) {
+    const decisions = await this.#readCollection('siteDecisions', where('project', '==', project));
+    return decisions.sort((first, second) => Number(first.id.slice(2)) - Number(second.id.slice(2)));
+  }
+
+  // NOTE: numbers decisions WG1, WG2 and so on, apart from the register's
+  // D1, D2; the comment that asked for it is marked accepted.
+  async createSiteDecision (
+    project,
+    {
+      title,
+      question,
+      options,
+      proposedOption,
+      request
+    }
+  ) {
+    const existing = await this.listSiteDecisions(project);
+    const id = `WG${existing.reduce((highest, decision) => Math.max(highest, Number(decision.id.slice(2))), 0) + 1}`;
+    await setDoc(doc(services.db, 'siteDecisions', DataStore.getDecisionKey(project, id)), {
+      project,
+      id,
+      title,
+      question,
+      options,
+      proposedOption: proposedOption || null,
+      requestID: request?.id ?? null,
+      raisedIn: request ? { kind: request.targetKind, key: request.targetKey, release: request.release, by: request.authorName } : null,
+      createdBy: this.#getMyEmail(),
+      createdAt: serverTimestamp()
+    });
+    if (request) {
+      await this.setCommentStatus(request.id, 'accepted');
+    }
+    return id;
+  }
+
+  async listDecisionRequests (
+    project
+  ) {
+    const comments = await this.#readCollection('comments', where('project', '==', project));
+    return comments
+      .filter((comment) => comment.type === 'decision-request')
+      .sort((first, second) => (second.createdAt?.toMillis?.() ?? 0) - (first.createdAt?.toMillis?.() ?? 0));
   }
 
   // Site settings

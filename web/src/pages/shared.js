@@ -82,6 +82,9 @@ export async function loadDecisions (
 export function getProposedOption (
   decision
 ) {
+  if (decision.proposedOption !== undefined) {
+    return decision.proposedOption;
+  }
   const match = /:\s*([A-Z])\b/.exec(decision.modelingChoice ?? '');
   return match ? match[1] : null;
 }
@@ -95,6 +98,40 @@ export function summarizeChoice (
   }
   const text = modelingChoice.replace(/^Decided\s+\S+:\s*/, '');
   return text.split(/\.\s/)[0].replace(/\.$/, '');
+}
+
+// NOTE: where a comment was made, as a link to that page.
+export function getCommentPlaceLink (
+  comment
+) {
+  const packageName = `${comment.project}-${comment.release}`;
+  if (comment.targetKind === 'construct') {
+    const [kind, name] = comment.targetKey.split(':');
+    return { href: getConstructLink(packageName, kind, name), label: `${name} (${comment.release})` };
+  }
+  if (comment.targetKind === 'decision') {
+    return { href: getDecisionLink(packageName, comment.targetKey), label: `decision ${comment.targetKey}` };
+  }
+  return { href: getReleaseLink(packageName), label: `release ${comment.release}` };
+}
+
+// NOTE: a decision raised on the site, in the shape of the register's.
+export function toRegisterDecision (
+  siteDecision
+) {
+  const proposed = siteDecision.options.find((option) => option.label === siteDecision.proposedOption);
+  return {
+    id: siteDecision.id,
+    title: siteDecision.title,
+    status: 'proposed',
+    source: 'site',
+    proposedOption: siteDecision.proposedOption ?? null,
+    modelingChoice: proposed ? `${proposed.label}, ${proposed.text}` : 'No option proposed yet',
+    options: siteDecision.options.map((option) => ({ ...option, recommended: false })),
+    text: siteDecision.question ?? '',
+    raisedIn: siteDecision.raisedIn,
+    createdBy: siteDecision.createdBy
+  };
 }
 
 export function renderMessage (

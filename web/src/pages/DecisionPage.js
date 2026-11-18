@@ -11,7 +11,7 @@ import { CommentThread } from '../CommentThread.js';
 import { DataStore } from '../DataStore.js';
 import { escapeHTML, formatDate } from '../html.js';
 import { renderMarkdown } from '../markdown.js';
-import { getDecisionLink, getProposedOption, getReleaseLink, loadDecisions, summarizeChoice } from './shared.js';
+import { getCommentPlaceLink, getDecisionLink, getProposedOption, getReleaseLink, loadDecisions, summarizeChoice, toRegisterDecision } from './shared.js';
 
 // ----------------------------------------------------------------------------
 // Functions
@@ -75,6 +75,35 @@ async function renderNoDecisions (
     </section>`;
 }
 
+// NOTE: the release's register decisions, then the decisions raised on the
+// site (WG1, WG2...), unless the register already carries the same ID.
+async function loadAllDecisions (
+  store,
+  dataStore,
+  packageEntry
+) {
+  const [register, siteDecisions] = await Promise.all([
+    loadDecisions(store, packageEntry),
+    dataStore.listSiteDecisions(packageEntry.manifest.project)
+  ]);
+  const decisions = register?.decisions ?? [];
+  const registerIDs = new Set(decisions.map((decision) => decision.id));
+  return {
+    register,
+    decisions: [...decisions, ...siteDecisions.filter((decision) => !registerIDs.has(decision.id)).map(toRegisterDecision)]
+  };
+}
+
+// NOTE: "A. Keep the name" lines become options { label, text }.
+function parseOptions (
+  text
+) {
+  return text.split('\n')
+    .map((line) => /^\s*([A-Z])[.):]\s+(.+)$/.exec(line))
+    .filter(Boolean)
+    .map((match) => ({ label: match[1], text: match[2].trim() }));
+}
+
 // ----------------------------------------------------------------------------
 // DecisionListPage
 // ----------------------------------------------------------------------------
@@ -89,11 +118,110 @@ export class DecisionListPage {
   constructor (
     store,
     dataStore,
-    packageEntry
+    packageEntry,
+    authController = null
   ) {
     this.store = store;
     this.dataStore = dataStore;
     this.packageEntry = packageEntry;
+    this.authController = authController;
+  }
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Instance internal methods
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // NOTE: open "Decision needed" comments from anywhere in the project.
+  // Admins can turn one into a decision.
+  #renderRequests (
+    requests
+  ) {
+    const open = requests.filter((request) => request.status === 'open');
+    if (open.length === 0) {
+      return '';
+    }
+    const isAdmin = this.authController?.isAdmin;
+    const items = open.map((request) => {
+      const place = getCommentPlaceLink(request);
+      return `
+        <li class="panel stack" style="padding: 16px 20px" data-request="${escapeHTML(request.id)}">
+          <p class="small muted"><strong style="color: var(--ink)">${escapeHTML(request.authorName)}</strong> on <a href="${place.href}">${escapeHTML(place.label)}</a></p>
+          <div class="comment-body">${renderMarkdown(request.body)}</div>
+          ${isAdmin ? '<div><button class="button button--secondary" type="button" data-make-decision>Turn into a decision</button></div><div class="make-decision"></div>' : ''}
+        </li>`;
+    }).join('');
+    return `
+      <section class="stack" id="decision-requests">
+        <h2>Requests for a Decision (${open.length})</h2>
+        <p class="small muted" style="max-width: 820px">${isAdmin ? 'Each is a "Decision needed" comment. Turn one into a decision to give the group options to take positions on; it gets the next WG number and the comment is marked accepted. Add it to the decision register in GitHub with the same number for the next release.' : 'Each is a "Decision needed" comment, waiting for an admin to turn it into a decision. To ask for one, comment on a construct, a decision or a release and choose the type "Decision needed".'}</p>
+        <ul class="stack" style="list-style: none; margin: 0; padding: 0">${items}</ul>
+      </section>`;
+  }
+
+  #renderDecisionForm (
+    request
+  ) {
+    const firstLine = request.body.split('\n')[0].replace(/[*`]/g, '').slice(0, 120);
+    return `
+      <form class="form" style="max-width: 760px; margin-top: 12px">
+        <label>Title (a question the group answers)
+          <input name="title" required maxlength="200" value="${escapeHTML(firstLine)}">
+        </label>
+        <label>Background
+          <textarea name="question" rows="5">${escapeHTML(request.body)}</textarea>
+        </label>
+        <label>Options, one per line, each starting with a letter
+          <textarea name="options" rows="4" required placeholder="A. Keep rollCall&#10;B. Rename it floorVote"></textarea>
+        </label>
+        <label>Proposed option (optional)
+          <input name="proposed" maxlength="1" style="max-width: 80px" placeholder="A">
+        </label>
+        <div class="row" style="gap: 12px"><button class="button" type="submit">Create the decision</button><button class="button button--secondary" type="button" data-cancel>Cancel</button></div>
+        <div class="form-status"></div>
+      </form>`;
+  }
+
+  #wireRequests (
+    container,
+    requests
+  ) {
+    for (const item of container.querySelectorAll('[data-request]')) {
+      const request = requests.find((entry) => entry.id === item.dataset.request);
+      const box = item.querySelector('.make-decision');
+      item.querySelector('[data-make-decision]')?.addEventListener('click', () => {
+        box.innerHTML = this.#renderDecisionForm(request);
+        const form = box.querySelector('form');
+        form.querySelector('[data-cancel]').addEventListener('click', () => { box.innerHTML = ''; });
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const status = form.querySelector('.form-status');
+          const options = parseOptions(form.elements.options.value);
+          const proposed = form.elements.proposed.value.trim().toUpperCase();
+          if (options.length < 2) {
+            status.innerHTML = '<div class="message message--error" role="alert">Give at least two options, one per line, each starting with a letter: "A. ...", "B. ...".</div>';
+            return;
+          }
+          if (proposed && !options.some((option) => option.label === proposed)) {
+            status.innerHTML = `<div class="message message--error" role="alert">There is no option ${escapeHTML(proposed)}.</div>`;
+            return;
+          }
+          form.querySelector('button[type="submit"]').disabled = true;
+          try {
+            const id = await this.dataStore.createSiteDecision(this.packageEntry.manifest.project, {
+              title: form.elements.title.value.trim(),
+              question: form.elements.question.value.trim(),
+              options,
+              proposedOption: proposed,
+              request
+            });
+            window.location.hash = getDecisionLink(this.packageEntry.name, id).slice(1);
+          } catch (error) {
+            status.innerHTML = `<div class="message message--error" role="alert">Could not create it: ${escapeHTML(error.message)}</div>`;
+            form.querySelector('button[type="submit"]').disabled = false;
+          }
+        });
+      });
+    }
   }
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -104,18 +232,21 @@ export class DecisionListPage {
     container
   ) {
     container.innerHTML = '<p class="muted" role="status">Loading decisions…</p>';
-    const register = await loadDecisions(this.store, this.packageEntry);
-    if (register === null) {
+    const project = this.packageEntry.manifest.project;
+    const [{ register, decisions }, requests] = await Promise.all([
+      loadAllDecisions(this.store, this.dataStore, this.packageEntry),
+      this.dataStore.listDecisionRequests(project)
+    ]);
+    if (decisions.length === 0 && !requests.some((request) => request.status === 'open')) {
       await renderNoDecisions(container, this.store, this.packageEntry);
       return;
     }
-    const project = this.packageEntry.manifest.project;
     const [records, positions, comments] = await Promise.all([
       this.dataStore.listDecisionRecords(project),
       this.dataStore.listPositions(project),
       this.dataStore.listCommentsByKind(project, 'decision')
     ]);
-    const rows = register.decisions.map((decision) => {
+    const rows = decisions.map((decision) => {
       const key = DataStore.getDecisionKey(project, decision.id);
       const record = records.get(key);
       const commentCount = comments.filter((comment) => comment.targetKey === decision.id && !comment.parentID).length;
@@ -128,22 +259,26 @@ export class DecisionListPage {
           <td class="num">${commentCount}</td>
         </tr>`;
     }).join('');
-    const settledCount = register.decisions.filter((decision) => isSettled(records.get(DataStore.getDecisionKey(project, decision.id)))).length;
-    const openIssues = register.openIssues.map((issue) => `<li>${escapeHTML(issue.title)} <span class="muted">(${escapeHTML(issue.decision)})</span></li>`).join('');
+    const settledCount = decisions.filter((decision) => isSettled(records.get(DataStore.getDecisionKey(project, decision.id)))).length;
+    const openIssues = (register?.openIssues ?? []).map((issue) => `<li>${escapeHTML(issue.title)} <span class="muted">(${escapeHTML(issue.decision)})</span></li>`).join('');
     container.innerHTML = `
       <nav aria-label="Breadcrumb" class="small muted"><a href="${getReleaseLink(this.packageEntry.name)}">${escapeHTML(String(project).toUpperCase())} ${escapeHTML(this.packageEntry.manifest.release)}</a> / Decisions</nav>
       <section class="stack">
         <h1>Decisions</h1>
-        <p style="max-width: 820px">Each decision is a modeling choice this release makes. Open one to read the options, state your position (support, oppose or abstain, with a reason) and comment. An admin records the working group's outcome: ratified, changed to another option, or reopened.</p>
-        <p class="small muted">${settledCount} of ${register.decisions.length} settled.</p>
+        <p style="max-width: 820px">Each decision is a modeling choice. D-numbered decisions come from this release's decision register; WG-numbered ones were raised by the working group on this site. Open one to read the options, state your position (support, oppose or abstain, with a reason) and comment. An admin records the working group's outcome: ratified, changed to another option, or reopened.</p>
+        <p class="small muted">${settledCount} of ${decisions.length} settled.</p>
       </section>
-      <div class="table-box">
-        <table>
-          <thead><tr><th scope="col">ID</th><th scope="col">Decision and proposed choice</th><th scope="col">Status</th><th scope="col">Positions</th><th scope="col" class="num">Comments</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+      ${this.#renderRequests(requests)}
+      ${decisions.length === 0
+        ? '<p class="muted">No decisions yet.</p>'
+        : `<div class="table-box">
+            <table>
+              <thead><tr><th scope="col">ID</th><th scope="col">Decision and proposed choice</th><th scope="col">Status</th><th scope="col">Positions</th><th scope="col" class="num">Comments</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`}
       ${openIssues ? `<section class="stack"><h2>Still Open in the Register</h2><ul style="margin: 0; padding-left: 20px; font-size: 14px">${openIssues}</ul></section>` : ''}`;
+    this.#wireRequests(container, requests);
   }
 }
 
@@ -243,7 +378,9 @@ export class DecisionPage {
     }
     const statuses = isSettled(record)
       ? { reopened: 'Reopen' }
-      : { ratified: `Ratify${chosenOption ? ` option ${chosenOption}` : ''}`, changed: 'Changed to another option' };
+      : chosenOption
+        ? { ratified: `Ratify option ${chosenOption}`, changed: 'Changed to another option' }
+        : { changed: 'Decided on an option' };
     const optionChoices = this.decision.options.map((option) => `<option value="${escapeHTML(option.label)}">Option ${escapeHTML(option.label)}</option>`).join('');
     return `
       <section class="panel stack" style="padding: 20px">
@@ -256,7 +393,7 @@ export class DecisionPage {
               ${Object.entries(statuses).map(([value, label], index) => `<label><input type="radio" name="status" value="${value}"${index === 0 ? ' checked' : ''}> ${escapeHTML(label)}</label>`).join('')}
             </div>
           </fieldset>
-          ${isSettled(record) ? '' : `<label id="option-field" hidden>Option chosen<select name="option">${optionChoices}</select></label>`}
+          ${isSettled(record) ? '' : `<label id="option-field"${chosenOption ? ' hidden' : ''}>Option chosen<select name="option">${optionChoices}</select></label>`}
           <label>Note (for example, the meeting and what was said)
             <textarea name="note" rows="3" maxlength="2000"></textarea>
           </label>
@@ -347,12 +484,8 @@ export class DecisionPage {
   ) {
     if (this.decision === null) {
       container.innerHTML = '<p class="muted" role="status">Loading the decision…</p>';
-      const register = await loadDecisions(this.store, this.packageEntry);
-      if (register === null) {
-        await renderNoDecisions(container, this.store, this.packageEntry);
-        return;
-      }
-      this.decision = register.decisions.find((decision) => decision.id === this.decisionID) ?? null;
+      const { decisions } = await loadAllDecisions(this.store, this.dataStore, this.packageEntry);
+      this.decision = decisions.find((decision) => decision.id === this.decisionID) ?? null;
       if (this.decision === null) {
         container.innerHTML = `
           <section class="stack">
@@ -379,7 +512,7 @@ export class DecisionPage {
           <h1>${escapeHTML(this.decision.title)}</h1>
           ${renderStatusPill(record)}
         </div>
-        <p style="max-width: 880px"><strong>Proposed:</strong> ${escapeHTML(summarizeChoice(this.decision.modelingChoice))}.</p>
+        <p style="max-width: 880px">${chosenOption ? `<strong>Proposed:</strong> ${escapeHTML(summarizeChoice(this.decision.modelingChoice))}.` : '<strong>No option proposed yet.</strong> State which you support.'}</p>
       </section>
       <div class="row">
         <div class="row__main">
@@ -387,10 +520,16 @@ export class DecisionPage {
             <h2>Options</h2>
             ${this.#renderOptions(chosenOption)}
           </section>
-          <section class="stack">
-            <h2>From the Decision Register</h2>
-            <div class="prose">${renderMarkdown(this.decision.text)}</div>
-          </section>
+          ${this.decision.source === 'site'
+            ? `<section class="stack">
+                <h2>Background</h2>
+                ${this.decision.raisedIn ? `<p class="small muted">Raised by ${escapeHTML(this.decision.raisedIn.by)} on <a href="${getCommentPlaceLink({ ...this.decision.raisedIn, targetKind: this.decision.raisedIn.kind, targetKey: this.decision.raisedIn.key, project: this.project }).href}">${escapeHTML(getCommentPlaceLink({ ...this.decision.raisedIn, targetKind: this.decision.raisedIn.kind, targetKey: this.decision.raisedIn.key, project: this.project }).label)}</a>; turned into a decision by ${escapeHTML(this.decision.createdBy)}. Not yet in the decision register in GitHub.</p>` : ''}
+                <div class="prose">${this.decision.text ? renderMarkdown(this.decision.text) : '<p class="muted">No background given.</p>'}</div>
+              </section>`
+            : `<section class="stack">
+                <h2>From the Decision Register</h2>
+                <div class="prose">${renderMarkdown(this.decision.text)}</div>
+              </section>`}
           <section class="stack" id="decision-comments"></section>
         </div>
         <aside class="row__side">

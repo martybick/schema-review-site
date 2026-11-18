@@ -8,6 +8,7 @@
 // ----------------------------------------------------------------------------
 
 import { escapeHTML, formatDate, formatNumber } from '../html.js';
+import { CommentThread } from '../CommentThread.js';
 import { DataStore } from '../DataStore.js';
 import { countPositions, renderStatusPill, renderTally } from './DecisionPage.js';
 import { getConstructLink, getDecisionLink, getReleaseLink, groupSamples, loadDecisions, loadSchemaIndex, summarizeChoice } from './shared.js';
@@ -48,8 +49,10 @@ export class ReleaseHomePage {
     store,
     dataStore,
     packageEntry,
-    siteControls = null
+    siteControls = null,
+    authController = null
   ) {
+    this.authController = authController;
     this.store = store;
     this.dataStore = dataStore;
     this.siteControls = siteControls;
@@ -321,6 +324,7 @@ export class ReleaseHomePage {
         <div class="row__main">
           <section class="stack" id="changes" aria-labelledby="changes-heading"><p class="muted" role="status">Comparing with ${escapeHTML(manifest.buildsOn ?? '')}…</p></section>
           <section class="stack" id="decisions" aria-labelledby="decisions-heading"><p class="muted" role="status">Loading decisions…</p></section>
+          <section class="stack" id="release-comments" aria-labelledby="comments-heading"></section>
         </div>
         <aside class="row__side">
           ${this.#renderReleaseSettings()}
@@ -330,7 +334,17 @@ export class ReleaseHomePage {
         </aside>
       </div>`;
     this.#wireReleaseSettings(container);
+    const commentThread = this.authController
+      ? new CommentThread(this.dataStore, this.authController, {
+        project: this.manifest.project,
+        release: this.manifest.release,
+        kind: 'release',
+        key: this.manifest.release,
+        intro: 'For anything about this release as a whole. To ask the group to settle a modeling choice, choose the type "Decision needed".'
+      })
+      : null;
     await Promise.all([
+      commentThread?.render(container.querySelector('#release-comments')),
       this.#fillReleases(container).catch(() => container.querySelector('#other-releases')?.remove()),
       this.#fillDecisions(container).catch((error) => {
         const target = container.querySelector('#decisions');

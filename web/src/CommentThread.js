@@ -64,7 +64,7 @@ export class CommentThread {
     return `
       <li class="panel stack" style="padding: 16px 20px">
         <div class="row" style="gap: 12px; align-items: center">
-          <span class="pill pill--navy">${escapeHTML(DataStore.COMMENT_TYPES[comment.type] ?? comment.type)}</span>
+          <span class="pill ${comment.type === 'decision-request' ? 'pill--oppose' : 'pill--navy'}">${escapeHTML(DataStore.COMMENT_TYPES[comment.type] ?? comment.type)}</span>
           <span class="small muted"><strong style="color: var(--ink)">${escapeHTML(comment.authorName)}</strong> · ${escapeHTML(formatDate(comment.createdAt?.toDate?.()))} · on ${escapeHTML(comment.release)}</span>
           <span style="flex: 1 1 auto"></span>
           ${statusControl}
@@ -88,7 +88,8 @@ export class CommentThread {
           <select name="type">
             ${Object.entries(DataStore.COMMENT_TYPES).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}
           </select>
-        </label>`;
+        </label>
+        <p class="small muted" style="margin-top: -6px">Choose "Decision needed" to ask the group to settle a modeling choice; say what the choice is and the options you see. An admin turns it into a decision.</p>`;
     return `
       <form class="form comment-form" data-parent="${escapeHTML(parentID ?? '')}" style="max-width: 760px">
         ${typeField}
@@ -197,6 +198,7 @@ export class CommentThread {
     }
     this.container.innerHTML = `
       <h2 id="comments-heading">Comments${topLevel.length > 0 ? ` (${topLevel.length})` : ''}</h2>
+      ${this.target.intro ? `<p class="small muted" style="max-width: 760px">${escapeHTML(this.target.intro)}</p>` : ''}
       ${topLevel.length === 0
         ? '<p class="muted">No comments yet.</p>'
         : `<ul class="stack" style="list-style: none; margin: 0; padding: 0">${topLevel.map((comment) => this.#renderComment(comment, repliesByParent.get(comment.id) ?? [])).join('')}</ul>`}
